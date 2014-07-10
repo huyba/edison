@@ -1,3 +1,7 @@
+// this is node.h containing all class's atributes and methods
+// @author: Huy Bui
+// @date: July 1st 2014
+
 #ifndef NODE_H
 #define NODE_H
 
