@@ -41,6 +41,7 @@ void Node::uGNI_init() {
     int cookie = get_cookie();
 
     // Create a handle to the communication domain. GNI_CDM_MODE_BTE_SINGLE_CHANNEL was used for modes variable.
+    modes = GNI_CDM_MODE_BTE_SINGLE_CHANNEL;
     gni_return_t status = GNI_CdmCreate(world_rank, ptag, cookie, modes, &cdm_handle);
 
     if (status != GNI_RC_SUCCESS) {
@@ -52,11 +53,10 @@ void Node::uGNI_init() {
     if (status != GNI_RC_SUCCESS) {
 	fprintf(stdout, "[%s] Rank: %4i GNI_CdmAttach     ERROR status: %d\n", uts_info.nodename, world_rank, status);
     }
+}
 
-    /* Allocate the endpoint handles array. */
-    endpoint_handles_array = (gni_ep_handle_t *) calloc(world_size, sizeof(gni_ep_handle_t));
-    assert(endpoint_handles_array != NULL);
-
+void Node::uGNI_createAndBindEndpoints() {
+    register int i;
 
     /* Get all nic address from all of the other ranks */
     unsigned int local_addr = get_gni_nic_address(0);
@@ -68,9 +68,28 @@ void Node::uGNI_init() {
     /* Get the nic addresses from all of the other ranks.*/
     allgather(&local_addr, all_nic_addresses, sizeof(int));
 
-    /*Allocate a buffer to contain all of the remote memory handle's */
-    remote_memory_handle_array = (mdh_addr_t *) calloc(world_size, sizeof(mdh_addr_t));
-    assert(remote_memory_handle_array);
+    /* Allocate the endpoint handles array. */
+    endpoint_handles_array = (gni_ep_handle_t *) calloc(world_size, sizeof(gni_ep_handle_t));
+    assert(endpoint_handles_array != NULL);
+
+    // Create logical endpoint and bind it to a corresponding 
+    for (i = 0; i < world_size; i++) {
+        if (i == world_rank) {
+            continue;
+        }
+
+        // Create the logical endpoints
+        gni_return_t status = GNI_EpCreate(nic_handle, cq_handle, &endpoint_handles_array[i]);
+        if (status != GNI_RC_SUCCESS) {
+            fprintf(stdout, "[%s] Rank: %4i GNI_EpCreate ERROR status: %d\n", uts_info.nodename, world_rank, status);
+        }
+
+        // Bind the remote address to the endpoint handler.
+        status = GNI_EpBind(endpoint_handles_array[i], all_nic_addresses[i], i);
+        if (status != GNI_RC_SUCCESS) {
+            fprintf(stdout, "[%s] Rank: %4i GNI_EpBind ERROR status: %d\n", uts_info.nodename, world_rank, status);
+        }
+    }
 }
 
 void Node::uGNI_createBasicCQ(int number_of_cq_entries, int number_of_dest_cq_entries) {
@@ -87,6 +106,11 @@ void Node::uGNI_createBasicCQ(int number_of_cq_entries, int number_of_dest_cq_en
     }
 }
 void Node::uGNI_regAndExchangeMem(void *send_buf, int send_length, void *recv_buf, int recv_length) {
+
+    /*Allocate a buffer to contain all of the remote memory handle's */
+    remote_memory_handle_array = (mdh_addr_t *) calloc(world_size, sizeof(mdh_addr_t));
+    assert(remote_memory_handle_array);
+
     gni_return_t status = GNI_MemRegister(nic_handle, (uint64_t)send_buf, send_length, NULL,
 	    GNI_MEM_READWRITE, -1,
 	    &send_mem_handle);
@@ -244,36 +268,6 @@ void Node::uGNI_finalize() {
 		uts_info.nodename, world_rank);
     }
 
-}
-
-void Node::uGNI_createAndBindEndpoints() {
-    register int i;
-    unsigned int    remote_address;
-
-    // Get all of the NIC address for all of the ranks.
-    all_nic_addresses = (unsigned int *) gather_nic_addresses();
-
-    // Create logical endpoint and bind it to a corresponding 
-    for (i = 0; i < world_size; i++) {
-	if (i == world_rank) {
-	    continue;
-	}
-
-	// Create the logical endpoints
-	gni_return_t status = GNI_EpCreate(nic_handle, cq_handle, &endpoint_handles_array[i]);
-	if (status != GNI_RC_SUCCESS) {
-	    fprintf(stdout, "[%s] Rank: %4i GNI_EpCreate ERROR status: %d\n", uts_info.nodename, world_rank, status);
-	}
-
-	// Get the remote address to bind to.
-	remote_address = all_nic_addresses[i];
-
-	// Bind the remote address to the endpoint handler.
-	status = GNI_EpBind(endpoint_handles_array[i], remote_address, i);
-	if (status != GNI_RC_SUCCESS) {
-	    fprintf(stdout, "[%s] Rank: %4i GNI_EpBind ERROR status: %d\n", uts_info.nodename, world_rank, status);
-	}
-    }
 }
 
 /*
