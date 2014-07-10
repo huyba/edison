@@ -38,7 +38,7 @@ int             compare_data_failed = 0;
 struct utsname  uts_info;
 //int             v_option = 0;
 
-#include "ugni_util.h"
+//#include "ugni_util.h"
 
 int main(int argc, char **argv)
 {
@@ -117,7 +117,7 @@ int main(int argc, char **argv)
 	receive_from = 0;
     }
 
-    topo_info(node.world_rank);
+    node.uGNI_getTopoInfo();
 
     /* Allocate the rdma_data_desc array. */
     rdma_data_desc = (gni_post_descriptor_t *) calloc(iters, sizeof(gni_post_descriptor_t));
@@ -204,209 +204,11 @@ int main(int argc, char **argv)
 	node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, iters);
     }
 
-EXIT_WAIT_BARRIER:
-    /*
-     * Wait for all the processes to finish before we clean up and exit.
-     */
+    node.uGNI_finalize();
 
-    rc = PMI_Barrier();
-    assert(rc == PMI_SUCCESS);
-
-    /*
-     * Free allocated memory.
-     */
-
-    free(node.remote_memory_handle_array);
-
-    /*
-     * Deregister the memory associated for the receive buffer with the NIC.
-     *     node.nic_handle is our NIC handle.
-     *     receive_memory_handle is the handle for this memory region.
-     */
-
-    status = GNI_MemDeregister(node.nic_handle, &node.recv_mem_handle);
-    if (status != GNI_RC_SUCCESS) {
-	fprintf(stdout,
-		"[%s] Rank: %4i GNI_MemDeregister receive_buffer ERROR status: %d\n",
-		uts_info.nodename, node.world_rank, status);
-	//INCREMENT_ABORTED;
-    } else {
-	if (v_option > 1) {
-	    fprintf(stdout,
-		    "[%s] Rank: %4i GNI_MemDeregister receive_buffer    NIC: %p\n",
-		    uts_info.nodename, node.world_rank, node.nic_handle);
-	}
-
-	/*
-	 * Free allocated memory.
-	 */
-
-	free(receive_buffer);
-    }
-
-EXIT_MEMORY_SOURCE:
-
-    /*
-     * Deregister the memory associated for the send buffer with the NIC.
-     *     node.nic_handle is our NIC handle.
-     *     source_memory_handle is the handle for this memory region.
-     */
-
-    status = GNI_MemDeregister(node.nic_handle, &node.send_mem_handle);
-    if (status != GNI_RC_SUCCESS) {
-	fprintf(stdout,
-		"[%s] Rank: %4i GNI_MemDeregister send_buffer ERROR status: %d\n",
-		uts_info.nodename, node.world_rank, status);
-	//INCREMENT_ABORTED;
-    } else {
-	if (v_option > 1) {
-	    fprintf(stdout,
-		    "[%s] Rank: %4i GNI_MemDeregister send_buffer       NIC: %p\n",
-		    uts_info.nodename, node.world_rank, node.nic_handle);
-	}
-
-	/*
-	 * Free allocated memory.
-	 */
-
-	free(send_buffer);
-    }
-
-EXIT_ENDPOINT:
-
-    /*
-     * Remove the endpoints to all of the ranks.
-     *
-     * Note: if there are outstanding events in the completion queue,
-     *       the endpoint can not be unbound.
-     */
-
-    for (i = 0; i < node.world_size; i++) {
-	if (i == node.world_rank) {
-	    continue;
-	}
-
-	if (node.endpoint_handles_array[i] == 0) {
-
-	    /*
-	     * This endpoint does not exist.
-	     */
-
-	    continue;
-	}
-
-	/*
-	 * Unbind the remote address from the endpoint handler.
-	 *     endpoint_handles_array is the endpoint handle that is being unbound
-	 */
-
-	status = GNI_EpUnbind(node.endpoint_handles_array[i]);
-	if (status != GNI_RC_SUCCESS) {
-	    fprintf(stdout,
-		    "[%s] Rank: %4i GNI_EpUnbind      ERROR remote rank: %4i status: %d\n",
-		    uts_info.nodename, node.world_rank, i, status);
-	    continue;
-	}
-
-	if (v_option > 1) {
-	    fprintf(stdout,
-		    "[%s] Rank: %4i GNI_EpUnbind      remote rank: %4i EP:  %p\n",
-		    uts_info.nodename, node.world_rank, i,
-		    node.endpoint_handles_array[i]);
-	}
-
-	/*
-	 * You must do an EpDestroy for each endpoint pair.
-	 *
-	 * Destroy the logical endpoint for each rank.
-	 *     endpoint_handles_array is the endpoint handle that is being
-	 *         destroyed.
-	 */
-
-	status = GNI_EpDestroy(node.endpoint_handles_array[i]);
-	if (status != GNI_RC_SUCCESS) {
-	    fprintf(stdout,
-		    "[%s] Rank: %4i GNI_EpDestroy     ERROR remote rank: %4i status: %d\n",
-		    uts_info.nodename, node.world_rank, i, status);
-	    continue;
-	}
-
-	if (v_option > 1) {
-	    fprintf(stdout,
-		    "[%s] Rank: %4i GNI_EpDestroy     remote rank: %4i EP:  %p\n",
-		    uts_info.nodename, node.world_rank, i,
-		    node.endpoint_handles_array[i]);
-	}
-    }
-
-    /*
-     * Free allocated memory.
-     */
-
-    free (node.endpoint_handles_array);
-
-    if (create_destination_cq != 0) {
-	/*
-	 * Destroy the destination completion queue.
-	 *     cq_handle is the handle that is being destroyed.
-	 */
-
-	status = GNI_CqDestroy(node.destination_cq_handle);
-	if (status != GNI_RC_SUCCESS) {
-	    fprintf(stdout,
-		    "[%s] Rank: %4i GNI_CqDestroy     destination ERROR status: %d\n",
-		    uts_info.nodename, node.world_rank, status);
-	} else if (v_option > 1) {
-	    fprintf(stdout,
-		    "[%s] Rank: %4i GNI_CqDestroy     destination\n",
-		    uts_info.nodename, node.world_rank);
-	}
-    }
-
-EXIT_CQ:
-
-    /*
-     * Destroy the completion queue.
-     *     cq_handle is the handle that is being destroyed.
-     */
-
-    status = GNI_CqDestroy(node.cq_handle);
-    if (status != GNI_RC_SUCCESS) {
-	fprintf(stdout,
-		"[%s] Rank: %4i GNI_CqDestroy     source ERROR status: %d\n",
-		uts_info.nodename, node.world_rank, status);
-    } else if (v_option > 1) {
-	fprintf(stdout, "[%s] Rank: %4i GNI_CqDestroy     source\n",
-		uts_info.nodename, node.world_rank);
-    }
-
-EXIT_DOMAIN:
-
-    /*
-     * Clean up the communication domain handle.
-     */
-
-    status = GNI_CdmDestroy(node.cdm_handle);
-    if (status != GNI_RC_SUCCESS) {
-	fprintf(stdout,
-		"[%s] Rank: %4i GNI_CdmDestroy    ERROR status: %d\n",
-		uts_info.nodename, node.world_rank, status);
-    } else if (v_option > 1) {
-	fprintf(stdout, "[%s] Rank: %4i GNI_CdmDestroy\n",
-		uts_info.nodename, node.world_rank);
-    }
-
-EXIT_TEST:
-
-    /*
-     * Free allocated memory.
-     */
-
+    free(receive_buffer);
+    free(send_buffer);
     free(rdma_data_desc);
-
-    /*
-     * Clean up the PMI information.
-     */
 
     PMI_Finalize();
 

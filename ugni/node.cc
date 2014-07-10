@@ -74,21 +74,21 @@ void Node::uGNI_createAndBindEndpoints() {
 
     // Create logical endpoint and bind it to a corresponding 
     for (i = 0; i < world_size; i++) {
-        if (i == world_rank) {
-            continue;
-        }
+	if (i == world_rank) {
+	    continue;
+	}
 
-        // Create the logical endpoints
-        gni_return_t status = GNI_EpCreate(nic_handle, cq_handle, &endpoint_handles_array[i]);
-        if (status != GNI_RC_SUCCESS) {
-            fprintf(stdout, "[%s] Rank: %4i GNI_EpCreate ERROR status: %d\n", uts_info.nodename, world_rank, status);
-        }
+	// Create the logical endpoints
+	gni_return_t status = GNI_EpCreate(nic_handle, cq_handle, &endpoint_handles_array[i]);
+	if (status != GNI_RC_SUCCESS) {
+	    fprintf(stdout, "[%s] Rank: %4i GNI_EpCreate ERROR status: %d\n", uts_info.nodename, world_rank, status);
+	}
 
-        // Bind the remote address to the endpoint handler.
-        status = GNI_EpBind(endpoint_handles_array[i], all_nic_addresses[i], i);
-        if (status != GNI_RC_SUCCESS) {
-            fprintf(stdout, "[%s] Rank: %4i GNI_EpBind ERROR status: %d\n", uts_info.nodename, world_rank, status);
-        }
+	// Bind the remote address to the endpoint handler.
+	status = GNI_EpBind(endpoint_handles_array[i], all_nic_addresses[i], i);
+	if (status != GNI_RC_SUCCESS) {
+	    fprintf(stdout, "[%s] Rank: %4i GNI_EpBind ERROR status: %d\n", uts_info.nodename, world_rank, status);
+	}
     }
 }
 
@@ -156,6 +156,55 @@ void Node::uGNI_finalize() {
     int v_option = 0;
     gni_return_t status = GNI_RC_SUCCESS;
 
+    int rc = PMI_Barrier();
+    assert(rc == PMI_SUCCESS);
+
+    free(remote_memory_handle_array);
+
+    /*
+     * Deregister the memory associated for the receive buffer with the NIC.
+     *     node.nic_handle is our NIC handle.
+     *     receive_memory_handle is the handle for this memory region.
+     */
+    status = GNI_MemDeregister(nic_handle, &recv_mem_handle);
+    if (status != GNI_RC_SUCCESS) {
+	fprintf(stdout,
+		"[%s] Rank: %4i GNI_MemDeregister receive_buffer ERROR status: %d\n",
+		uts_info.nodename, world_rank, status);
+	//INCREMENT_ABORTED;
+    } else {
+	if (v_option > 1) {
+	    fprintf(stdout,
+		    "[%s] Rank: %4i GNI_MemDeregister receive_buffer    NIC: %p\n",
+		    uts_info.nodename, world_rank, nic_handle);
+	}
+    }
+
+    /*
+     * Deregister the memory associated for the send buffer with the NIC.
+     *     node.nic_handle is our NIC handle.
+     *     source_memory_handle is the handle for this memory region.
+     */
+    status = GNI_MemDeregister(nic_handle, &send_mem_handle);
+    if (status != GNI_RC_SUCCESS) {
+	fprintf(stdout,
+		"[%s] Rank: %4i GNI_MemDeregister send_buffer ERROR status: %d\n",
+		uts_info.nodename, world_rank, status);
+	//INCREMENT_ABORTED;
+    } else {
+	if (v_option > 1) {
+	    fprintf(stdout,
+		    "[%s] Rank: %4i GNI_MemDeregister send_buffer       NIC: %p\n",
+		    uts_info.nodename, world_rank, nic_handle);
+	}
+    }
+
+    /*
+     * Remove the endpoints to all of the ranks.
+     *
+     * Note: if there are outstanding events in the completion queue,
+     *       the endpoint can not be unbound.
+     */
     for (i = 0; i < world_size; i++) {
 	if (i == world_rank) {
 	    continue;
