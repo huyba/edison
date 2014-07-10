@@ -1,3 +1,7 @@
+// This is code for a node to communicate with other nodes using uGNI libraries
+// @author: Huy Bui
+// @date: July 1st, 2014
+
 #include "node.h"
 
 
