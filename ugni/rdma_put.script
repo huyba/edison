@@ -1,0 +1,10 @@
+#PBS -l mppwidth=24
+#PBS -l walltime=00:10:00
+#PBS -N rdma_put
+#PBS -q debug
+#PBS -V
+
+cd $PBS_O_WORKDIR
+
+aprun -n 4 ./rdma_put.x 4194304 100
+
