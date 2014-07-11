@@ -20,6 +20,7 @@
 
 #include "gni_pub.h"
 #include "pmi.h"
+#include "mpi.h"
 
 #include "node.h"
 
@@ -48,6 +49,8 @@ int main(int argc, char **argv)
 	transfer_length = TRANSFER_LENGTH;
 	iters = NUMBER_OF_TRANSFERS;
     }
+
+    MPI_Init(&argc, &argv);
 
     int             create_destination_cq = 1;
     uint64_t        data = SEND_DATA;
@@ -170,12 +173,14 @@ int main(int argc, char **argv)
 	rdma_data_desc[i].rdma_mode = GNI_RDMAMODE_FENCE;
 	rdma_data_desc[i].src_cq_hndl = node.cq_handle;
     }
+    
+    if(node.world_rank == 0)
+        printf("Size   Bandwidth   Latency\n");
+
+    gettimeofday(&t1, NULL);
 
     if(node.world_rank == 0) {
-	printf("Size   Bandwidth   Latency\n");
-
-	gettimeofday(&t1, NULL);
-
+	send_to = 3;
 	for (i = 0; i < iters; i++) {
 	    /* Send the data. */
 
@@ -188,18 +193,39 @@ int main(int argc, char **argv)
 
 	//Check to make sure that all sends are done.
 	node.uGNI_waitAllSendDone(send_to, node.cq_handle, iters);
-
-	if(node.world_rank == 0) {
-	    gettimeofday(&t2, NULL);
-	    double latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
-	    double bandwidth = transfer_length_in_bytes*1000000.0/(latency*1024*1024);
-	    printf("%d \t %8.6f \t %8.4f\n", transfer_length_in_bytes, bandwidth, latency);
-	}
     }
 
+    /*Act as a proxy*/
+    if(node.world_rank == 2) {
+	receive_from = 0;
+	send_to = 3;
+	for(i = 0; i < iters; i++) {
+	    node.uGNI_waitRecvDone(receive_from, node.cq_handle);
+	    status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
+            if (status != GNI_RC_SUCCESS) {
+                fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
+                continue;
+            }
+	}
+	//Check to make sure that all sends are done.
+        node.uGNI_waitAllSendDone(send_to, node.cq_handle, iters);
+    }
+
+    /*Destination to receive data*/
     if(node.world_rank == 3) {
+	receive_from = 2;
 	//Check to get all data received
 	node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, iters);
+    }
+
+    gettimeofday(&t2, NULL);
+    double latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
+    double max_latency = 0;
+    MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    if(node.world_rank == 0) {
+        double bandwidth = transfer_length_in_bytes*1000000.0/(max_latency*1024*1024);
+        printf("%d \t %8.6f \t %8.4f\n", transfer_length_in_bytes, bandwidth, latency);
     }
 
     node.uGNI_finalize();
