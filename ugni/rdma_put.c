@@ -139,7 +139,7 @@ int main(int argc, char **argv)
     }
 
     if(node.world_rank == 0) {
-	printf("Size\tBandwidth\tLatency\n");
+	printf("Size   Bandwidth   Latency\n");
 
 	gettimeofday(&t1, NULL);
 
