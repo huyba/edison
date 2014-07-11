@@ -87,7 +87,7 @@ int main(int argc, char **argv)
     memset(send_buffer, 0, (transfer_length_in_bytes * iters));
 
     rc = posix_memalign((void **) &receive_buffer, 64,
-            (transfer_length_in_bytes * iters));
+	    (transfer_length_in_bytes * iters));
     assert(rc == 0);
 
     /*Initialize the buffer to all zeros.*/
@@ -123,27 +123,27 @@ int main(int argc, char **argv)
     rdma_data_desc = (gni_post_descriptor_t *) calloc(iters, sizeof(gni_post_descriptor_t));
     assert(rdma_data_desc != NULL);
 
-    if(node.world_rank == 0) {
-	// Start measuring data
-	if(node.world_rank == 0) {
-	    printf("Size\tBandwidth\tLatency\n");
-	    gettimeofday(&t1, NULL);
+    for(i = 0; i < iters; i++) {
+	/*
+	 * Initialize the data to be sent.
+	 * The source data will look like: 0xddddlllllltttttt
+	 *     where: dddd is the actual value
+	 *            llllll is the rank for this process
+	 *            tttttt is the transfer number
+	 */
+	data = SEND_DATA + my_id + i + 1;
+
+	for (j = 0; j < transfer_length; j++) {
+	    send_buffer[j + (i * transfer_length)] = data;
 	}
+    }
+
+    if(node.world_rank == 0) {
+	printf("Size\tBandwidth\tLatency\n");
+
+	gettimeofday(&t1, NULL);
+
 	for (i = 0; i < iters; i++) {
-	    /*
-	     * Initialize the data to be sent.
-	     * The source data will look like: 0xddddlllllltttttt
-	     *     where: dddd is the actual value
-	     *            llllll is the rank for this process
-	     *            tttttt is the transfer number
-	     */
-
-	    data = SEND_DATA + my_id + i + 1;
-
-	    for (j = 0; j < transfer_length; j++) {
-		send_buffer[j + (i * transfer_length)] = data;
-	    }
-
 	    /*
 	     * Setup the data request.
 	     *    type is RDMA_PUT.
@@ -199,7 +199,7 @@ int main(int argc, char **argv)
 	}
     }
 
-    if(node.world_rank == 4) {
+    if(node.world_rank == 3) {
 	//Check to get all data received
 	node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, iters);
     }
