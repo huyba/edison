@@ -1,3 +1,7 @@
+/*
+** Some util functions for node class
+*/
+
 #ifndef NODE_UTIL_H
 #define NODE_UTIL_H
 
