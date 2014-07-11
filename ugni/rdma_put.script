@@ -6,5 +6,5 @@
 
 cd $PBS_O_WORKDIR
 
-aprun -n 4 ./rdma_put.x 4194304 100
+aprun -n 4 ./rdma_put.x 262144 50
 

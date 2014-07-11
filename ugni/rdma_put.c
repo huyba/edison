@@ -106,20 +106,19 @@ int main(int argc, char **argv)
     my_id = (node.world_rank & 0xffffff) << 24;
 
     if(node.world_rank == 0){
+	send_to = 2;
+    }
+
+    if(node.world_rank == 2) {
+	receive_from = 0;
 	send_to = 3;
-	receive_from = 3;
     }
 
     if(node.world_rank == 3) {
-	send_to = 0;
-	receive_from = 0;
+	receive_from = 2;
     }
 
     node.uGNI_getTopoInfo();
-
-    /* Allocate the rdma_data_desc array. */
-    rdma_data_desc = (gni_post_descriptor_t *) calloc(iters, sizeof(gni_post_descriptor_t));
-    assert(rdma_data_desc != NULL);
 
     for(i = 0; i < iters; i++) {
 	/*
@@ -136,8 +135,22 @@ int main(int argc, char **argv)
 	}
     }
 
+    if(node.world_rank == 0)
+        printf("Size   Bandwidth   Latency\n");
+
+    int nbytes = transfer_length_in_bytes;
+    int win_size =0;
+    int min_size = 128*1024;
+    int max_size = 4*1024*1024;
+    int num_loops = 0;
+    int max_loops = nbytes/min_size*iters;
+
+    /* Allocate the rdma_data_desc array. */
+    rdma_data_desc = (gni_post_descriptor_t *) calloc(max_loops, sizeof(gni_post_descriptor_t));
+    assert(rdma_data_desc != NULL);
+
     /*Set up the data request*/
-    for (i = 0; i < iters; i++) {
+    for (i = 0; i < max_loops; i++) {
 	/*
 	 * Setup the data request.
 	 *    type is RDMA_PUT.
@@ -164,68 +177,81 @@ int main(int argc, char **argv)
 	}
 	rdma_data_desc[i].dlvr_mode = GNI_DLVMODE_PERFORMANCE;
 	rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
-	rdma_data_desc[i].local_addr += i * transfer_length_in_bytes;
+	//rdma_data_desc[i].local_addr += i * transfer_length_in_bytes;
 	rdma_data_desc[i].local_mem_hndl = node.send_mem_handle;
 	rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
-	rdma_data_desc[i].remote_addr += i * transfer_length_in_bytes;
+	//rdma_data_desc[i].remote_addr += i * transfer_length_in_bytes;
 	rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
-	rdma_data_desc[i].length = transfer_length_in_bytes - sizeof(uint64_t);
+	//rdma_data_desc[i].length = transfer_length_in_bytes - sizeof(uint64_t);
 	rdma_data_desc[i].rdma_mode = GNI_RDMAMODE_FENCE;
 	rdma_data_desc[i].src_cq_hndl = node.cq_handle;
     }
-    
-    if(node.world_rank == 0)
-        printf("Size   Bandwidth   Latency\n");
 
-    gettimeofday(&t1, NULL);
+    int num_transfers = 0;
 
-    if(node.world_rank == 0) {
-	send_to = 3;
-	for (i = 0; i < iters; i++) {
-	    /* Send the data. */
+    for(win_size = min_size; win_size <= max_size; win_size *= 2) {
+	num_transfers = nbytes/win_size;
+	num_loops = iters*num_transfers;
 
-	    status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
-	    if (status != GNI_RC_SUCCESS) {
-		fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
-		continue;
-	    }
-	}   /* end of for loop for transfers */
+	gettimeofday(&t1, NULL);
 
-	//Check to make sure that all sends are done.
-	node.uGNI_waitAllSendDone(send_to, node.cq_handle, iters);
-    }
+	if(node.world_rank == 0) {
+	    for (i = 0; i < num_loops; i++) {
+		/* Send the data. */
+		rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
+		rdma_data_desc[i].local_addr += i * win_size;
+		rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
+		rdma_data_desc[i].remote_addr += i * win_size;
+		rdma_data_desc[i].length = win_size - sizeof(uint64_t);
+		status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
+		if (status != GNI_RC_SUCCESS) {
+		    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
+		    continue;
+		}
+	    }   /* end of for loop for transfers */
 
-    /*Act as a proxy*/
-    if(node.world_rank == 2) {
-	receive_from = 0;
-	send_to = 3;
-	for(i = 0; i < iters; i++) {
-	    node.uGNI_waitRecvDone(receive_from, node.cq_handle);
-	    status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
-            if (status != GNI_RC_SUCCESS) {
-                fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
-                continue;
-            }
+	    //Check to make sure that all sends are done.
+	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
 	}
-	//Check to make sure that all sends are done.
-        node.uGNI_waitAllSendDone(send_to, node.cq_handle, iters);
-    }
 
-    /*Destination to receive data*/
-    if(node.world_rank == 3) {
-	receive_from = 2;
-	//Check to get all data received
-	node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, iters);
-    }
+	/*Act as a proxy*/
+	if(node.world_rank == 2) {
+	    for(i = 0; i < num_loops; i++) {
+		node.uGNI_waitRecvDone(receive_from, node.destination_cq_handle);
 
-    gettimeofday(&t2, NULL);
-    double latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
-    double max_latency = 0;
-    MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+		rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
+                rdma_data_desc[i].local_addr += i * win_size;
+                rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
+                rdma_data_desc[i].remote_addr += i * win_size;
+		rdma_data_desc[i].length = win_size - sizeof(uint64_t);
 
-    if(node.world_rank == 0) {
-        double bandwidth = transfer_length_in_bytes*1000000.0/(max_latency*1024*1024);
-        printf("%d \t %8.6f \t %8.4f\n", transfer_length_in_bytes, bandwidth, latency);
+		status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
+		if (status != GNI_RC_SUCCESS) {
+		    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
+		    continue;
+		}
+	    }
+	    //Check to make sure that all sends are done.
+	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
+	}
+
+	/*Destination to receive data*/
+	if(node.world_rank == 3) {
+	    //Check to get all data received
+	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops);
+	}
+
+	gettimeofday(&t2, NULL);
+
+	double latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
+	double max_latency = 0;
+	MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+	if(node.world_rank == 0) {
+	    double bandwidth = transfer_length_in_bytes*1000000.0/(max_latency*1024*1024);
+	    printf("%d \t %8.6f \t %8.4f\n", win_size, bandwidth, latency);
+	}
+
     }
 
     node.uGNI_finalize();
