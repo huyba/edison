@@ -1,6 +1,7 @@
 /*
 ** This code is to test rdma put function of ugni
 ** @author: Huy Bui
+** @date: July 11, 2014
 **
 */
 
