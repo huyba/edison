@@ -1,14 +1,7 @@
 /*
- * Copyright (c) 2011 Cray Inc.  All Rights Reserved.
- */
-
-/*
- * RDMA Put test example - this test only uses PMI
- *
- * Note: this test should not be run oversubscribed on nodes, i.e. more
- * instances on a given node than cpus, owing to the busy wait for
- * incoming data.
- */
+** This code is to test rdma put function of ugni
+**
+*/
 
 #include <stdio.h>
 #include <stdint.h>
