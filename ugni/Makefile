@@ -18,7 +18,7 @@ LD      = $(CC)
 LDFLAGS = $(COPT)
 
 OBJ :=	node.o
-all: ${OBJ} test.x
+all: ${OBJ} test.x rdma_put.x
 
 %.o: %.cc
 	$(CC) $(CFLAGS) $(LIBS) -c $< -o $@
