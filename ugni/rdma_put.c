@@ -1,9 +1,9 @@
 /*
-** This code is to test rdma put function of ugni
-** @author: Huy Bui
-** @date: July 11, 2014
-**
-*/
+ ** This code is to test rdma put function of ugni
+ ** @author: Huy Bui
+ ** @date: July 11, 2014
+ **
+ */
 
 #include <stdio.h>
 #include <stdint.h>
@@ -133,47 +133,50 @@ int main(int argc, char **argv)
 	}
     }
 
+    /*Set up the data request*/
+    for (i = 0; i < iters; i++) {
+	/*
+	 * Setup the data request.
+	 *    type is RDMA_PUT.
+	 *    cq_mode states what type of events should be sent.
+	 *         GNI_CQMODE_GLOBAL_EVENT allows for the sending of an event
+	 *             to the local node after the receipt of the data.
+	 *         GNI_CQMODE_REMOTE_EVENT allows for the sending of an event
+	 *             to the remote node after the receipt of the data.
+	 *    dlvr_mode states the delivery mode.
+	 *    local_addr is the address of the sending buffer.
+	 *    local_mem_hndl is the memory handle of the sending buffer.
+	 *    remote_addr is the the address of the receiving buffer.
+	 *    remote_mem_hndl is the memory handle of the receiving buffer.
+	 *    length is the amount of data to transfer.
+	 *    rdma_mode states how the request will be handled.
+	 *    src_cq_hndl is the source complete queue handle.
+	 */
+
+	rdma_data_desc[i].type = GNI_POST_RDMA_PUT;
+	if (create_destination_cq != 0) {
+	    rdma_data_desc[i].cq_mode = GNI_CQMODE_GLOBAL_EVENT | GNI_CQMODE_REMOTE_EVENT;
+	} else {
+	    rdma_data_desc[i].cq_mode = GNI_CQMODE_GLOBAL_EVENT;
+	}
+	rdma_data_desc[i].dlvr_mode = GNI_DLVMODE_PERFORMANCE;
+	rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
+	rdma_data_desc[i].local_addr += i * transfer_length_in_bytes;
+	rdma_data_desc[i].local_mem_hndl = node.send_mem_handle;
+	rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
+	rdma_data_desc[i].remote_addr += i * transfer_length_in_bytes;
+	rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
+	rdma_data_desc[i].length = transfer_length_in_bytes - sizeof(uint64_t);
+	rdma_data_desc[i].rdma_mode = GNI_RDMAMODE_FENCE;
+	rdma_data_desc[i].src_cq_hndl = node.cq_handle;
+    }
+
     if(node.world_rank == 0) {
 	printf("Size   Bandwidth   Latency\n");
 
 	gettimeofday(&t1, NULL);
 
 	for (i = 0; i < iters; i++) {
-	    /*
-	     * Setup the data request.
-	     *    type is RDMA_PUT.
-	     *    cq_mode states what type of events should be sent.
-	     *         GNI_CQMODE_GLOBAL_EVENT allows for the sending of an event
-	     *             to the local node after the receipt of the data.
-	     *         GNI_CQMODE_REMOTE_EVENT allows for the sending of an event
-	     *             to the remote node after the receipt of the data.
-	     *    dlvr_mode states the delivery mode.
-	     *    local_addr is the address of the sending buffer.
-	     *    local_mem_hndl is the memory handle of the sending buffer.
-	     *    remote_addr is the the address of the receiving buffer.
-	     *    remote_mem_hndl is the memory handle of the receiving buffer.
-	     *    length is the amount of data to transfer.
-	     *    rdma_mode states how the request will be handled.
-	     *    src_cq_hndl is the source complete queue handle.
-	     */
-
-	    rdma_data_desc[i].type = GNI_POST_RDMA_PUT;
-	    if (create_destination_cq != 0) {
-		rdma_data_desc[i].cq_mode = GNI_CQMODE_GLOBAL_EVENT | GNI_CQMODE_REMOTE_EVENT;
-	    } else {
-		rdma_data_desc[i].cq_mode = GNI_CQMODE_GLOBAL_EVENT;
-	    }
-	    rdma_data_desc[i].dlvr_mode = GNI_DLVMODE_PERFORMANCE;
-	    rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
-	    rdma_data_desc[i].local_addr += i * transfer_length_in_bytes;
-	    rdma_data_desc[i].local_mem_hndl = node.send_mem_handle;
-	    rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
-	    rdma_data_desc[i].remote_addr += i * transfer_length_in_bytes;
-	    rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
-	    rdma_data_desc[i].length = transfer_length_in_bytes - sizeof(uint64_t);
-	    rdma_data_desc[i].rdma_mode = GNI_RDMAMODE_FENCE;
-	    rdma_data_desc[i].src_cq_hndl = node.cq_handle;
-
 	    /* Send the data. */
 
 	    status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
