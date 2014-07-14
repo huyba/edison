@@ -140,7 +140,7 @@ int main(int argc, char **argv)
 
     int nbytes = transfer_length_in_bytes;
     int win_size =0;
-    int min_size = 128*1024;
+    int min_size = 512*1024;
     int max_size = 4*1024*1024;
     int num_loops = 0;
     int max_loops = nbytes/min_size*iters;
@@ -193,6 +193,8 @@ int main(int argc, char **argv)
 	num_transfers = nbytes/win_size;
 	num_loops = iters*num_transfers;
 
+	printf("win_size = %d, min_size = %d, num_transfers = %d, num_loops = %d\n", win_size, min_size, num_transfers, num_loops);
+
 	gettimeofday(&t1, NULL);
 
 	if(node.world_rank == 0) {
@@ -208,17 +210,19 @@ int main(int argc, char **argv)
 		    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
 		    continue;
 		}
+		printf("post a message\n");
 	    }   /* end of for loop for transfers */
 
 	    //Check to make sure that all sends are done.
 	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
+	    printf("done waiting\n");
 	}
 
 	/*Act as a proxy*/
 	if(node.world_rank == 2) {
 	    for(i = 0; i < num_loops; i++) {
 		node.uGNI_waitRecvDone(receive_from, node.destination_cq_handle);
-
+		printf("done waiting at rank 2\n");
 		rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
                 rdma_data_desc[i].local_addr += i * win_size;
                 rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
@@ -230,15 +234,18 @@ int main(int argc, char **argv)
 		    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
 		    continue;
 		}
+		printf("post a messges at rank 2\n");
 	    }
 	    //Check to make sure that all sends are done.
 	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
+	    printf("done waiting at rank 2\n");
 	}
 
 	/*Destination to receive data*/
 	if(node.world_rank == 3) {
 	    //Check to get all data received
 	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops);
+	    printf("rank 3 done waiting all\n");
 	}
 
 	gettimeofday(&t2, NULL);
