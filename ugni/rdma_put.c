@@ -113,7 +113,7 @@ int main(int argc, char **argv)
 	send_to = 2;
     }
 
-    if(node.world_rank == 2) {
+    if(node.world_rank == 2 || node.world_rank == 1) {
 	receive_from = 0;
 	send_to = 3;
     }
@@ -190,6 +190,9 @@ int main(int argc, char **argv)
 	rdma_data_desc[i].src_cq_hndl = node.cq_handle;
     }
 
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
     int num_transfers = 0;
 
     /*Through proxies using pipeline technique*/
@@ -204,7 +207,7 @@ int main(int argc, char **argv)
 
 	if(node.world_rank == 0) {
 	    send_to = 2;
-	    for (i = 0; i < num_loops; i++) {
+	    for (i = 0; i < num_loops/2; i++) {
 		/* Send the data. */
 		rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
 		rdma_data_desc[i].local_addr += i * win_size;
@@ -220,14 +223,32 @@ int main(int argc, char **argv)
 		//printf("Rank 0 posted a message\n");
 	    }   /* end of for loop for transfers */
 
+	    send_to = 1;
+            for (i = num_loops/2; i < num_loops; i++) {
+                /* Send the data. */
+                rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
+                rdma_data_desc[i].local_addr += i * win_size;
+                rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
+                rdma_data_desc[i].remote_addr += i * win_size;
+                rdma_data_desc[i].length = win_size - sizeof(uint64_t);
+                status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
+                if (status != GNI_RC_SUCCESS) {
+                    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
+                    postRdmaStatus(status);
+                    continue;
+                }
+                //printf("Rank 0 posted a message\n");
+            }   /* end of for loop for transfers */
+
 	    //Check to make sure that all sends are done.
-	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
+	    node.uGNI_waitAllSendDone(2, node.cq_handle, num_loops/2);
+	    node.uGNI_waitAllSendDone(1, node.cq_handle, num_loops/2);
 	    //printf("Rank 0 done all\n");
 	}
 
 	/*Act as a proxy*/
 	if(node.world_rank == 2) {
-	    for(i = 0; i < num_loops; i++) {
+	    for(i = 0; i < num_loops/2; i++) {
 		node.uGNI_waitRecvDone(receive_from, node.destination_cq_handle);
 		//printf("done waiting at rank 2\n");
 		rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
@@ -245,15 +266,40 @@ int main(int argc, char **argv)
 		//printf("Rank 2 posted a message\n");
 	    }
 	    //Check to make sure that all sends are done.
-	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
+	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops/2);
 	    //printf("Rank 2 done all\n");
 	}
+
+	if(node.world_rank == 1) {
+            for(i = num_loops/2; i < num_loops; i++) {
+                node.uGNI_waitRecvDone(receive_from, node.destination_cq_handle);
+                //printf("done waiting at rank 1\n");
+                rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
+                rdma_data_desc[i].local_addr += i * win_size;
+                rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
+                rdma_data_desc[i].remote_addr += i * win_size;
+                rdma_data_desc[i].length = win_size - sizeof(uint64_t);
+
+                status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
+                if (status != GNI_RC_SUCCESS) {
+                    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
+                    postRdmaStatus(status);
+                    continue;
+                }
+                //printf("Rank 1 posted a message\n");
+            }
+            //Check to make sure that all sends are done.
+            node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops/2);
+            //printf("Rank 1 done all\n");
+        }
 
 	/*Destination to receive data*/
 	if(node.world_rank == 3) {
 	    receive_from = 2;
 	    //Check to get all data received
-	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops);
+	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops/2);
+	    receive_from = 1;
+	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops/2);
 	    //printf("Rank 3 done waiting all\n");
 	}
 
@@ -265,7 +311,7 @@ int main(int argc, char **argv)
 
 	if(node.world_rank == 0) {
 	    double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
-	    printf("%d \t %8.6f \t %8.4f\n", win_size, bandwidth, latency);
+	    printf("%d \t %8.6f \t %8.4f\n", win_size, bandwidth, max_latency);
 	}
 
     }
@@ -305,7 +351,7 @@ int main(int argc, char **argv)
 
     if(node.world_rank == 0) {
         double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
-        printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, latency);
+        printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
         printf("\nTransfer through proxies using pipeline\n");
     }
 

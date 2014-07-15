@@ -374,7 +374,7 @@ void Node::uGNI_waitRecvDone(int receive_from, gni_cq_handle_t cq_handle) {
 	event_id = GNI_CQ_GET_INST_ID(current_event);
 	if (event_id != receive_from) {
 	    // The event's inst_id was not the expected inst_id value.
-	    fprintf(stdout, "[%s] Rank: %4i CQ Event destination ERROR received inst_id: %d, expected inst_id: %d in event_data\n", uts_info.nodename, world_rank, event_id, receive_from);
+	   // fprintf(stdout, "[%s] Rank: %4i CQ Event destination ERROR received inst_id: %d, expected inst_id: %d in event_data\n", uts_info.nodename, world_rank, event_id, receive_from);
 	}
 	//printf("Rank %d done receiving\n", world_rank);
     } else {		 
