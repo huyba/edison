@@ -1,0 +1,10 @@
+#PBS -l mppwidth=96
+#PBS -l walltime=00:10:00
+#PBS -N pipeline
+#PBS -q debug
+#PBS -V
+
+cd $PBS_O_WORKDIR
+
+aprun -n 4 -S 1 -sn 1 ./pipeline.x 256 4096 4096 30
+
