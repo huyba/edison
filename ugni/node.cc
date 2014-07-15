@@ -345,7 +345,7 @@ void Node::uGNI_waitSendDone(int send_to, gni_cq_handle_t cq_handle) {
 		// The event's inst_id was not the expected inst_id value.
 		fprintf(stdout, "[%s] Rank: %4i CQ Event data ERROR received inst_id: %d, expected inst_id: %d in event_data\n", uts_info.nodename, world_rank, event_id, send_to);
 	    }
-	    //printf("Rank %d done sending\n", world_rank);
+	   // printf("Rank %d done sending\n", world_rank);
 	}
     }
 }

@@ -123,6 +123,7 @@ int main(int argc, char **argv)
     }
 
     node.uGNI_getTopoInfo();
+    printf("Rank %d [x, y, z, nid] = [%d, %d, %d, %d]\n", node.world_rank, node.coord.mesh_x, node.coord.mesh_y, node.coord.mesh_z, node.nid);
 
     for(i = 0; i < iters; i++) {
 	/*

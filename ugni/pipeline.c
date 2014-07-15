@@ -201,9 +201,6 @@ int main(int argc, char **argv)
 	num_transfers = nbytes/win_size;
 	num_loops = iters*num_transfers;
 
-	if(node.world_rank == 0)
-	    printf("win_size = %d, num_transfers = %d, num_loops = %d\n", win_size, num_transfers, num_loops);
-
 	gettimeofday(&t1, NULL);
 
 	if(node.world_rank == 0) {
@@ -223,9 +220,11 @@ int main(int argc, char **argv)
 		}
 		//printf("Rank 0 posted a message\n");
 	    }   /* end of for loop for transfers */
+	    printf("Rank %d Timestamp: %s\n", node.world_rank, time_stamp());
 
 	    //Check to make sure that all sends are done.
 	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
+	    printf("Rank %d Timestamp: %s\n", node.world_rank, time_stamp());
 	    //printf("Rank 0 done all\n");
 	}
 
@@ -246,10 +245,12 @@ int main(int argc, char **argv)
 		    postRdmaStatus(status);
 		    continue;
 		}
+		printf("Rank %d Timestamp: %s\n", node.world_rank, time_stamp());
 		//printf("Rank 2 posted a message\n");
 	    }
 	    //Check to make sure that all sends are done.
 	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
+	    printf("Rank %d Timestamp: %s\n", node.world_rank, time_stamp());
 	    //printf("Rank 2 done all\n");
 	}
 
@@ -258,6 +259,7 @@ int main(int argc, char **argv)
 	    receive_from = 2;
 	    //Check to get all data received
 	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops);
+	    printf("Rank %d Timestamp: %s\n", node.world_rank,time_stamp());
 	    //printf("Rank 3 done waiting all\n");
 	}
 
@@ -269,7 +271,7 @@ int main(int argc, char **argv)
 
 	if(node.world_rank == 0) {
 	    double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
-	    printf("%d \t %8.6f \t %8.4f\n", win_size, bandwidth, max_latency);
+	    printf("%d \t %8.6f \t %8.4f %d %d \n", win_size, bandwidth, max_latency, num_transfers, num_loops);
 	}
 
     }

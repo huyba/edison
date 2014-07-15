@@ -6,5 +6,5 @@
 
 cd $PBS_O_WORKDIR
 
-aprun -n 4 -S 1 -sn 1 ./pipeline.x 256 4096 4096 30
+aprun -n 4 -S 1 -sn 1 ./pipeline.x 2048 262144 262144  2
 
