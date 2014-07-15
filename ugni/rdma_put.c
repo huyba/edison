@@ -38,14 +38,18 @@ struct utsname  uts_info;
 
 int main(int argc, char **argv)
 {
-    int transfer_length_in_bytes, transfer_length, iters;
-
-    if(argc == 3) {
-	transfer_length_in_bytes = atoi(argv[1]);
-	transfer_length = transfer_length_in_bytes/sizeof(uint64_t);
-	iters = atoi(argv[2]);
+    int nbytes, transfer_length, iters;
+    int min_wsize, max_wsize;
+    if(argc == 5) {
+	min_wsize = atoi(argv[1])*1024;
+	max_wsize = atoi(argv[2])*1024;
+	nbytes = atoi(argv[3])*1024;
+	transfer_length = nbytes/sizeof(uint64_t);
+	iters = atoi(argv[4]);
     } else {
-	transfer_length_in_bytes = TRANSFER_LENGTH_IN_BYTES;
+	min_wsize = 128*1024;
+	max_wsize = 4*1024*1024;
+	nbytes = TRANSFER_LENGTH_IN_BYTES;
 	transfer_length = TRANSFER_LENGTH;
 	iters = NUMBER_OF_TRANSFERS;
     }
@@ -78,20 +82,20 @@ int main(int argc, char **argv)
     node.uGNI_createAndBindEndpoints();
 
     rc = posix_memalign((void **) &send_buffer, 64,
-	    (transfer_length_in_bytes * iters));
+	    (nbytes * iters));
     assert(rc == 0);
 
     /*Initialize the buffer to all zeros.*/
-    memset(send_buffer, 0, (transfer_length_in_bytes * iters));
+    memset(send_buffer, 0, (nbytes * iters));
 
     rc = posix_memalign((void **) &receive_buffer, 64,
-	    (transfer_length_in_bytes * iters));
+	    (nbytes * iters));
     assert(rc == 0);
 
     /*Initialize the buffer to all zeros.*/
-    memset(receive_buffer, 0, (transfer_length_in_bytes * iters));
+    memset(receive_buffer, 0, (nbytes * iters));
 
-    node.uGNI_regAndExchangeMem(send_buffer, transfer_length_in_bytes * iters, receive_buffer, transfer_length_in_bytes * iters);
+    node.uGNI_regAndExchangeMem(send_buffer, nbytes * iters, receive_buffer, nbytes * iters);
 
     /*
      * Determine who we are going to send our data to and
@@ -135,22 +139,21 @@ int main(int argc, char **argv)
 	}
     }
 
-    if(node.world_rank == 0)
+    if(node.world_rank == 0) {
+	printf("min_wsize = %d, max_wsize = %d, message_size = %d, iters = %d\n", min_wsize, max_wsize, nbytes, iters);
         printf("Size   Bandwidth   Latency\n");
+    }
 
-    int nbytes = transfer_length_in_bytes;
     int win_size =0;
-    int min_size = 512*1024;
-    int max_size = 4*1024*1024;
     int num_loops = 0;
-    int max_loops = nbytes/min_size*iters;
+    int num_wins = nbytes/min_wsize*iters;
 
     /* Allocate the rdma_data_desc array. */
-    rdma_data_desc = (gni_post_descriptor_t *) calloc(max_loops, sizeof(gni_post_descriptor_t));
+    rdma_data_desc = (gni_post_descriptor_t *) calloc(num_wins, sizeof(gni_post_descriptor_t));
     assert(rdma_data_desc != NULL);
 
     /*Set up the data request*/
-    for (i = 0; i < max_loops; i++) {
+    for (i = 0; i < num_wins; i++) {
 	/*
 	 * Setup the data request.
 	 *    type is RDMA_PUT.
@@ -189,11 +192,12 @@ int main(int argc, char **argv)
 
     int num_transfers = 0;
 
-    for(win_size = min_size; win_size <= max_size; win_size *= 2) {
+    for(win_size = min_wsize; win_size <= max_wsize; win_size *= 2) {
 	num_transfers = nbytes/win_size;
 	num_loops = iters*num_transfers;
 
-	printf("win_size = %d, min_size = %d, num_transfers = %d, num_loops = %d\n", win_size, min_size, num_transfers, num_loops);
+	if(node.world_rank == 0)
+	    printf("win_size = %d, num_transfers = %d, num_loops = %d\n", win_size, num_transfers, num_loops);
 
 	gettimeofday(&t1, NULL);
 
@@ -208,21 +212,22 @@ int main(int argc, char **argv)
 		status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
 		if (status != GNI_RC_SUCCESS) {
 		    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
+		    postRdmaStatus(status);
 		    continue;
 		}
-		printf("post a message\n");
+		//printf("Rank 0 posted a message\n");
 	    }   /* end of for loop for transfers */
 
 	    //Check to make sure that all sends are done.
 	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
-	    printf("done waiting\n");
+	    //printf("Rank 0 done all\n");
 	}
 
 	/*Act as a proxy*/
 	if(node.world_rank == 2) {
 	    for(i = 0; i < num_loops; i++) {
 		node.uGNI_waitRecvDone(receive_from, node.destination_cq_handle);
-		printf("done waiting at rank 2\n");
+		//printf("done waiting at rank 2\n");
 		rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
                 rdma_data_desc[i].local_addr += i * win_size;
                 rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
@@ -232,20 +237,21 @@ int main(int argc, char **argv)
 		status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
 		if (status != GNI_RC_SUCCESS) {
 		    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
+		    postRdmaStatus(status);
 		    continue;
 		}
-		printf("post a messges at rank 2\n");
+		printf("Rank 2 posted a message\n");
 	    }
 	    //Check to make sure that all sends are done.
 	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
-	    printf("done waiting at rank 2\n");
+	    //printf("Rank 2 done all\n");
 	}
 
 	/*Destination to receive data*/
 	if(node.world_rank == 3) {
 	    //Check to get all data received
 	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops);
-	    printf("rank 3 done waiting all\n");
+	    //printf("Rank 3 done waiting all\n");
 	}
 
 	gettimeofday(&t2, NULL);
@@ -255,7 +261,7 @@ int main(int argc, char **argv)
 	MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
 	if(node.world_rank == 0) {
-	    double bandwidth = transfer_length_in_bytes*1000000.0/(max_latency*1024*1024);
+	    double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
 	    printf("%d \t %8.6f \t %8.4f\n", win_size, bandwidth, latency);
 	}
 
