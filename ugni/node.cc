@@ -345,7 +345,7 @@ void Node::uGNI_waitSendDone(int send_to, gni_cq_handle_t cq_handle) {
 		// The event's inst_id was not the expected inst_id value.
 		fprintf(stdout, "[%s] Rank: %4i CQ Event data ERROR received inst_id: %d, expected inst_id: %d in event_data\n", uts_info.nodename, world_rank, event_id, send_to);
 	    }
-	    printf("Rank %d done sending\n", world_rank);
+	    //printf("Rank %d done sending\n", world_rank);
 	}
     }
 }
@@ -376,7 +376,7 @@ void Node::uGNI_waitRecvDone(int receive_from, gni_cq_handle_t cq_handle) {
 	    // The event's inst_id was not the expected inst_id value.
 	    fprintf(stdout, "[%s] Rank: %4i CQ Event destination ERROR received inst_id: %d, expected inst_id: %d in event_data\n", uts_info.nodename, world_rank, event_id, receive_from);
 	}
-	printf("Rank %d done receiving\n", world_rank);
+	//printf("Rank %d done receiving\n", world_rank);
     } else {		 
 	//An error occurred while receiving the event.
 	fprintf(stderr,"[%s] Rank: %4i CQ Event ERROR destination queue did not receieve data event\n", uts_info.nodename, world_rank);
