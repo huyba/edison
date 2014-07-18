@@ -110,24 +110,31 @@ int main(int argc, char **argv)
     if(node.world_rank == source){
 	send_to = proxy;
 	isSource = true;
-	printf("Source is MPI rank %d\n", source);
+	//printf("Source is MPI rank %d\n", source);
     }
 
     if(node.world_rank == proxy) {
 	receive_from = source;
 	send_to = dest;
 	isProxy = true;
-	printf("Proxy is MPI rank %d\n", proxy);
+	//printf("Proxy is MPI rank %d\n", proxy);
     }
 
     if(node.world_rank == dest) {
 	receive_from = proxy;
 	isDest = true;
-	printf("Dest is MPI rank %d\n", dest);
+	//printf("Dest is MPI rank %d\n", dest);
     }
 
     node.uGNI_getTopoInfo();
-    printf("Rank %d [x, y, z, nid] = [%d, %d, %d, %d]\n", node.world_rank, node.coord.mesh_x, node.coord.mesh_y, node.coord.mesh_z, node.nid);
+    if(isSource)
+	printf("Rank %d [x, y, z, nid] = [%d, %d, %d, %d] - Source\n", node.world_rank, node.coord.mesh_x, node.coord.mesh_y, node.coord.mesh_z, node.nid);
+    else if(isDest)
+	printf("Rank %d [x, y, z, nid] = [%d, %d, %d, %d] - Dest\n", node.world_rank, node.coord.mesh_x, node.coord.mesh_y, node.coord.mesh_z, node.nid);
+    else if(isProxy)
+	printf("Rank %d [x, y, z, nid] = [%d, %d, %d, %d] - Proxy\n", node.world_rank, node.coord.mesh_x, node.coord.mesh_y, node.coord.mesh_z, node.nid);
+    else
+	printf("Rank %d [x, y, z, nid] = [%d, %d, %d, %d]\n", node.world_rank, node.coord.mesh_x, node.coord.mesh_y, node.coord.mesh_z, node.nid);
 
     for(i = 0; i < iters; i++) {
 	/*
@@ -146,7 +153,7 @@ int main(int argc, char **argv)
 
     if(node.world_rank == 0) {
 	printf("min_wsize = %d, max_wsize = %d, message_size = %d, iters = %d\n", min_wsize, max_wsize, nbytes, iters);
-	printf("Size   \t Bandwidth  \t Latency \t #transfers \t #total_iters\n");
+	printf("Size  \t\t\t Bandwidth  \t Latency \t #transfers \t #total_iters\n");
     }
 
     int win_size =0;
@@ -270,7 +277,6 @@ int main(int argc, char **argv)
 	    double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
 	    printf("%d \t %8.6f \t %8.4f %d %d \n", win_size, bandwidth, max_latency, num_transfers, num_loops);
 	}
-
     }
 
     /*Direct transfer*/
@@ -296,7 +302,7 @@ int main(int argc, char **argv)
 	    rdma_data_desc[i].length = nbytes- sizeof(uint64_t);
 	    status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
 	    if (status != GNI_RC_SUCCESS) {
-		fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
+		fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d, iter %dth\n", uts_info.nodename, node.world_rank, status, i+1);
 		postRdmaStatus(status);
 		continue;
 	    }
@@ -309,6 +315,8 @@ int main(int argc, char **argv)
     }
 
     gettimeofday(&t2, NULL);
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     double latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
     double max_latency = 0;
@@ -324,22 +332,24 @@ int main(int argc, char **argv)
     if(node.world_rank == 0)
 	printf("\nDirect transfer using MPI_Put\n");
 
-    MPI_Win *wins = (MPI_Win*)malloc(sizeof(MPI_Win)*iters);
-    for(i = 0; i < iters; i++)
-	MPI_Win_create(&send_buffer[i*nbytes/sizeof(uint64_t)], nbytes, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &wins[i]);
+    MPI_Win win;
+    MPI_Win_create(send_buffer, nbytes*iters, 1, MPI_INFO_NULL, MPI_COMM_WORLD, win);
 
     /*Direct transfer using MPI_Put*/
     MPI_Barrier(MPI_COMM_WORLD);
 
     gettimeofday(&t1, NULL);
+    MPI_Win_fence(0, win);
+
     for(i = 0; i < iters; i++) {
-	MPI_Win_fence(0, wins[i]);
 	if(isSource) {
 	    send_to = dest;
-	    MPI_Put(&send_buffer[i*nbytes/sizeof(uint64_t)], nbytes, MPI_BYTE, send_to, 0, nbytes, MPI_BYTE, wins[i]);
+	    int disp = i*nbytes/sizeof(uint64_t);
+	    MPI_Put(&send_buffer[disp], nbytes, MPI_BYTE, send_to, disp, nbytes, MPI_BYTE, win);
 	}
-	MPI_Win_fence(0, wins[i]);
     }
+
+    MPI_Win_fence(0, win);
     gettimeofday(&t2, NULL);
 
     MPI_Barrier(MPI_COMM_WORLD);
