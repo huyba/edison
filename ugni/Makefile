@@ -18,7 +18,7 @@ LD      = $(CC)
 LDFLAGS = $(COPT)
 
 OBJ :=	node.o
-all: ${OBJ} pipeline.x rdma_put.x
+all: ${OBJ} pipeline.x rdma_put.x hello.x
 
 %.o: %.cc
 	$(CC) $(CFLAGS) $(LIBS) -c $< -o $@

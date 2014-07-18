@@ -1,0 +1,10 @@
+#PBS -l mppwidth=24
+#PBS -l walltime=00:10:00
+#PBS -N hello
+#PBS -q debug
+#PBS -V
+
+cd $PBS_O_WORKDIR
+
+aprun -n 8 ./hello.x
+

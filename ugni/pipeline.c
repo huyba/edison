@@ -75,9 +75,14 @@ int main(int argc, char **argv)
 
     Node node;
     node.uGNI_init();
+    //if(node.world_rank == 0)
+//	printf("Done init\n");
 
     node.uGNI_createBasicCQ(number_of_cq_entries, number_of_dest_cq_entries);
     node.uGNI_createAndBindEndpoints();
+
+  //  if(node.world_rank == 0)
+    //    printf("Done CQ and EP\n");
 
     rc = posix_memalign((void **) &send_buffer, 64,
 	    (nbytes * iters));
@@ -94,6 +99,8 @@ int main(int argc, char **argv)
     memset(receive_buffer, 0, (nbytes * iters));
 
     node.uGNI_regAndExchangeMem(send_buffer, nbytes * iters, receive_buffer, nbytes * iters);
+    //if(node.world_rank == 0)
+      //  printf("Done MEM\n");
 
     /*
      * Determine who we are going to send our data to and
@@ -152,8 +159,8 @@ int main(int argc, char **argv)
     }
 
     if(node.world_rank == 0) {
-	printf("min_wsize = %d, max_wsize = %d, message_size = %d, iters = %d\n", min_wsize, max_wsize, nbytes, iters);
-	printf("Size  \t\t\t Bandwidth  \t Latency \t #transfers \t #total_iters\n");
+	printf("\nmin_wsize = %d, max_wsize = %d, message_size = %d, iters = %d\n", min_wsize, max_wsize, nbytes, iters);
+	printf("\nSize  \t\t\t Bandwidth  \t Latency \t #transfers \t #total_iters\n");
     }
 
     int win_size =0;
@@ -196,12 +203,11 @@ int main(int argc, char **argv)
 	rdma_data_desc[i].local_mem_hndl = node.send_mem_handle;
 	rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
 	//rdma_data_desc[i].remote_addr += i * transfer_length_in_bytes;
-	rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
+	//rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
 	//rdma_data_desc[i].length = transfer_length_in_bytes - sizeof(uint64_t);
 	rdma_data_desc[i].rdma_mode = GNI_RDMAMODE_FENCE;
 	rdma_data_desc[i].src_cq_hndl = node.cq_handle;
     }
-
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -221,6 +227,7 @@ int main(int argc, char **argv)
 		rdma_data_desc[i].local_addr += i * win_size;
 		rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
 		rdma_data_desc[i].remote_addr += i * win_size;
+		rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
 		rdma_data_desc[i].length = win_size - sizeof(uint64_t);
 		status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
 		if (status != GNI_RC_SUCCESS) {
@@ -245,6 +252,7 @@ int main(int argc, char **argv)
 		rdma_data_desc[i].local_addr += i * win_size;
 		rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
 		rdma_data_desc[i].remote_addr += i * win_size;
+		rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
 		rdma_data_desc[i].length = win_size - sizeof(uint64_t);
 
 		status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
@@ -299,6 +307,7 @@ int main(int argc, char **argv)
 	    rdma_data_desc[i].local_addr += i * nbytes;
 	    rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
 	    rdma_data_desc[i].remote_addr += i * nbytes;
+	    rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
 	    rdma_data_desc[i].length = nbytes- sizeof(uint64_t);
 	    status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
 	    if (status != GNI_RC_SUCCESS) {
@@ -333,7 +342,7 @@ int main(int argc, char **argv)
 	printf("\nDirect transfer using MPI_Put\n");
 
     MPI_Win win;
-    MPI_Win_create(send_buffer, nbytes*iters, 1, MPI_INFO_NULL, MPI_COMM_WORLD, win);
+    MPI_Win_create(send_buffer, nbytes*iters, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
 
     /*Direct transfer using MPI_Put*/
     MPI_Barrier(MPI_COMM_WORLD);
