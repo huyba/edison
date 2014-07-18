@@ -146,7 +146,7 @@ int main(int argc, char **argv)
 
     if(node.world_rank == 0) {
 	printf("min_wsize = %d, max_wsize = %d, message_size = %d, iters = %d\n", min_wsize, max_wsize, nbytes, iters);
-	printf("Size   Bandwidth   Latency\n");
+	printf("Size   \t Bandwidth  \t Latency \t #transfers \t #total_iters\n");
     }
 
     int win_size =0;
@@ -286,6 +286,7 @@ int main(int argc, char **argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     gettimeofday(&t1, NULL);
+
     if(isSource) {
 	for(i = 0; i < iters; i++) {
 	    rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
@@ -300,6 +301,7 @@ int main(int argc, char **argv)
 		continue;
 	    }
 	}
+	node.uGNI_waitAllSendDone(send_to, node.cq_handle, iters);
     }
 
     if(isDest) {
@@ -320,11 +322,11 @@ int main(int argc, char **argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     if(node.world_rank == 0)
-	printf("Direct transfer using MPI_Put\n");
+	printf("\nDirect transfer using MPI_Put\n");
 
     MPI_Win *wins = (MPI_Win*)malloc(sizeof(MPI_Win)*iters);
     for(i = 0; i < iters; i++)
-	MPI_Win_create(&send_buffer[i*nbytes], nbytes, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &wins[i]);
+	MPI_Win_create(&send_buffer[i*nbytes/sizeof(uint64_t)], nbytes, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &wins[i]);
 
     /*Direct transfer using MPI_Put*/
     MPI_Barrier(MPI_COMM_WORLD);
@@ -334,7 +336,7 @@ int main(int argc, char **argv)
 	MPI_Win_fence(0, wins[i]);
 	if(isSource) {
 	    send_to = dest;
-	    MPI_Put(&send_buffer[i*nbytes], nbytes, MPI_BYTE, send_to, 0, nbytes, MPI_BYTE, wins[i]);
+	    MPI_Put(&send_buffer[i*nbytes/sizeof(uint64_t)], nbytes, MPI_BYTE, send_to, 0, nbytes, MPI_BYTE, wins[i]);
 	}
 	MPI_Win_fence(0, wins[i]);
     }
@@ -350,6 +352,9 @@ int main(int argc, char **argv)
 	double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
 	printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
     }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
     node.uGNI_finalize();
 
     free(receive_buffer);

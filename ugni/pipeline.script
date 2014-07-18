@@ -1,4 +1,4 @@
-#PBS -l mppwidth=96
+#PBS -l mppwidth=24
 #PBS -l walltime=00:10:00
 #PBS -N pipeline
 #PBS -q debug
@@ -6,5 +6,9 @@
 
 cd $PBS_O_WORKDIR
 
-aprun -n 4 -S 1 -sn 1 ./pipeline.x 1024 262144 262144  2
+aprun -n 8 ./pipeline.x 2048 262144 262144  2
+
+#aprun -n 4 -L 2661,2786,2788,2792 -S 1 -sn 1 ./pipeline.x 1024 262144 262144  2
+
+#aprun -n 4 -S 1 -sn 1 ./pipeline.x 1024 262144 262144  2
 
