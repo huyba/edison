@@ -76,20 +76,23 @@ int main(int argc, char **argv)
     Node node;
     node.uGNI_init();
     //if(node.world_rank == 0)
-//	printf("Done init\n");
+    //	printf("Done init\n");
 
     node.uGNI_createBasicCQ(number_of_cq_entries, number_of_dest_cq_entries);
     node.uGNI_createAndBindEndpoints();
 
-  //  if(node.world_rank == 0)
+    //  if(node.world_rank == 0)
     //    printf("Done CQ and EP\n");
 
     rc = posix_memalign((void **) &send_buffer, 64,
 	    (nbytes * iters));
     assert(rc == 0);
+    char *char_send = (char*)send_buffer;
+    for(int i = 0; i < nbytes*iters; i++)
+	char_send[i] = 7;
 
     /*Initialize the buffer to all zeros.*/
-    memset(send_buffer, 0, (nbytes * iters));
+    //memset(send_buffer, 0, (nbytes * iters));
 
     rc = posix_memalign((void **) &receive_buffer, 64,
 	    (nbytes * iters));
@@ -100,7 +103,7 @@ int main(int argc, char **argv)
 
     node.uGNI_regAndExchangeMem(send_buffer, nbytes * iters, receive_buffer, nbytes * iters);
     //if(node.world_rank == 0)
-      //  printf("Done MEM\n");
+    //  printf("Done MEM\n");
 
     /*
      * Determine who we are going to send our data to and
@@ -160,7 +163,7 @@ int main(int argc, char **argv)
 
     if(node.world_rank == 0) {
 	printf("\nmin_wsize = %d, max_wsize = %d, message_size = %d, iters = %d\n", min_wsize, max_wsize, nbytes, iters);
-	printf("\nSize  \t\t\t Bandwidth  \t Latency \t #transfers \t #total_iters\n");
+	printf("\nSize  \t\t Bandwidth  \t Latency \t #transfers \t #total_iters\n");
     }
 
     int win_size =0;
@@ -285,11 +288,21 @@ int main(int argc, char **argv)
 	    double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
 	    printf("%d \t %8.6f \t %8.4f %d %d \n", win_size, bandwidth, max_latency, num_transfers, num_loops);
 	}
+
+	if(isDest) {
+	    if(memcmp(send_buffer, receive_buffer, nbytes*iters) != 0)
+		printf("Invalid received data!\n");
+	    rc = posix_memalign((void **) &receive_buffer, 64,
+		    (nbytes * iters));
+	    assert(rc == 0);
+	}
+
+	MPI_Barrier(MPI_COMM_WORLD);
     }
 
     /*Direct transfer*/
     if(node.world_rank == 0)
-        printf("\nDirect transfer using GNI_PostRdma\n");
+	printf("\nDirect transfer using GNI_PostRdma\n");
 
     if(isSource)
 	send_to = dest;
@@ -336,13 +349,23 @@ int main(int argc, char **argv)
 	printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
     }
 
+    if(isDest) {
+	if(memcmp(send_buffer, receive_buffer, nbytes*iters) != 0)
+	    printf("Error: Invalid received data - Post_Rdma no proxies\n");
+	rc = posix_memalign((void **) &receive_buffer, 64,
+		(nbytes * iters));
+	assert(rc == 0);
+    }
+
     MPI_Barrier(MPI_COMM_WORLD);
 
     if(node.world_rank == 0)
 	printf("\nDirect transfer using MPI_Put\n");
 
+
+    char *win_buf = (char*)send_buffer;
     MPI_Win win;
-    MPI_Win_create(send_buffer, nbytes*iters, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+    MPI_Win_create(win_buf, nbytes*iters, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
 
     /*Direct transfer using MPI_Put*/
     MPI_Barrier(MPI_COMM_WORLD);
@@ -353,8 +376,8 @@ int main(int argc, char **argv)
     for(i = 0; i < iters; i++) {
 	if(isSource) {
 	    send_to = dest;
-	    int disp = i*nbytes/sizeof(uint64_t);
-	    MPI_Put(&send_buffer[disp], nbytes, MPI_BYTE, send_to, disp, nbytes, MPI_BYTE, win);
+	    int disp = i*nbytes;
+	    MPI_Put(&win_buf[disp], nbytes, MPI_BYTE, send_to, disp, nbytes, MPI_BYTE, win);
 	}
     }
 
@@ -369,7 +392,15 @@ int main(int argc, char **argv)
 
     if(node.world_rank == 0) {
 	double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
-	printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
+	printf("%d \t %8.6f \t %8.4f\n\n", nbytes, bandwidth, max_latency);
+    }
+
+    if(isDest) {
+	if(memcmp(send_buffer, receive_buffer, nbytes*iters) != 0)
+	    printf("Error: Invalid received data. MPI_Put\n");
+	rc = posix_memalign((void **) &receive_buffer, 64,
+		(nbytes * iters));
+	assert(rc == 0);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
