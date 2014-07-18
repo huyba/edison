@@ -60,8 +60,6 @@ int main(int argc, char **argv)
     uint64_t        data = SEND_DATA;
     register int    i;
     register int    j;
-    int             my_id;
-    int             my_receive_from;
     int             rc;
     gni_post_descriptor_t *rdma_data_desc;
     int             receive_from;
@@ -104,22 +102,28 @@ int main(int argc, char **argv)
 
     struct timeval t1, t2;
 
-    send_to = (node.world_rank + 1) % node.world_size;
-    receive_from = (node.world_size + node.world_rank - 1) % node.world_size;
-    my_receive_from = (receive_from & 0xffffff) << 24;
-    my_id = (node.world_rank & 0xffffff) << 24;
+    int source = 0;
+    int dest = node.world_size -1;
+    int proxy = node.world_size/2;
+    bool isSource = false, isProxy = false, isDest = false;
 
-    if(node.world_rank == 0){
-	send_to = 2;
+    if(node.world_rank == source){
+	send_to = proxy;
+	isSource = true;
+	printf("Source is MPI rank %d\n", source);
     }
 
-    if(node.world_rank == 2 || node.world_rank == 1) {
-	receive_from = 0;
-	send_to = 3;
+    if(node.world_rank == proxy) {
+	receive_from = source;
+	send_to = dest;
+	isProxy = true;
+	printf("Proxy is MPI rank %d\n", proxy);
     }
 
-    if(node.world_rank == 3) {
-	receive_from = 2;
+    if(node.world_rank == dest) {
+	receive_from = proxy;
+	isDest = true;
+	printf("Dest is MPI rank %d\n", dest);
     }
 
     node.uGNI_getTopoInfo();
@@ -133,7 +137,7 @@ int main(int argc, char **argv)
 	 *            llllll is the rank for this process
 	 *            tttttt is the transfer number
 	 */
-	data = SEND_DATA + my_id + i + 1;
+	data = SEND_DATA + i + 1;
 
 	for (j = 0; j < transfer_length; j++) {
 	    send_buffer[j + (i * transfer_length)] = data;
@@ -203,8 +207,7 @@ int main(int argc, char **argv)
 
 	gettimeofday(&t1, NULL);
 
-	if(node.world_rank == 0) {
-	    send_to = 2;
+	if(isSource) {
 	    for (i = 0; i < num_loops; i++) {
 		/* Send the data. */
 		rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
@@ -227,7 +230,7 @@ int main(int argc, char **argv)
 	}
 
 	/*Act as a proxy*/
-	if(node.world_rank == 2) {
+	if(isProxy) {
 	    for(i = 0; i < num_loops; i++) {
 		node.uGNI_waitRecvDone(receive_from, node.destination_cq_handle);
 		//printf("done waiting at rank 2\n");
@@ -251,8 +254,7 @@ int main(int argc, char **argv)
 	}
 
 	/*Destination to receive data*/
-	if(node.world_rank == 3) {
-	    receive_from = 2;
+	if(isDest) {
 	    //Check to get all data received
 	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops);
 	    //printf("Rank 3 done waiting all\n");
@@ -273,13 +275,18 @@ int main(int argc, char **argv)
 
     /*Direct transfer*/
     if(node.world_rank == 0)
-	printf("\nDirect transfer using GNI_PostRdma\n");
+        printf("\nDirect transfer using GNI_PostRdma\n");
+
+    if(isSource)
+	send_to = dest;
+
+    if(isDest)
+	receive_from = source;
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     gettimeofday(&t1, NULL);
-    if(node.world_rank == 0) {
-	send_to = 3;
+    if(isSource) {
 	for(i = 0; i < iters; i++) {
 	    rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
 	    rdma_data_desc[i].local_addr += i * nbytes;
@@ -295,8 +302,7 @@ int main(int argc, char **argv)
 	}
     }
 
-    if(node.world_rank == 3) {
-	receive_from = 0;
+    if(isDest) {
 	node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, iters);
     }
 
@@ -326,8 +332,8 @@ int main(int argc, char **argv)
     gettimeofday(&t1, NULL);
     for(i = 0; i < iters; i++) {
 	MPI_Win_fence(0, wins[i]);
-	if(node.world_rank == 0) {
-	    send_to = node.world_size - 1;
+	if(isSource) {
+	    send_to = dest;
 	    MPI_Put(&send_buffer[i*nbytes], nbytes, MPI_BYTE, send_to, 0, nbytes, MPI_BYTE, wins[i]);
 	}
 	MPI_Win_fence(0, wins[i]);
