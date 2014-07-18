@@ -318,6 +318,8 @@ int main(int argc, char **argv)
     }
 
     /*Direct transfer*/
+    if(node.world_rank == 0)
+	printf("\nDirect transfer using GNI_PostRdma\n");
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -353,7 +355,6 @@ int main(int argc, char **argv)
     if(node.world_rank == 0) {
         double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
         printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
-        printf("\nTransfer through proxies using pipeline\n");
     }
 
     MPI_Barrier(MPI_COMM_WORLD);

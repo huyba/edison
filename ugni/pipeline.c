@@ -325,19 +325,19 @@ int main(int argc, char **argv)
 
     gettimeofday(&t1, NULL);
     for(i = 0; i < iters; i++) {
-	MPI_Win_fence(0, &wins[i]);
+	MPI_Win_fence(0, wins[i]);
 	if(node.world_rank == 0) {
 	    send_to = node.world_size - 1;
-	    MPI_Put(&send_buffer[i*nbytes], nbytes, MPI_BYTE, send_to, 0, nbytes, MPI_BYTE, &wins[i]);
+	    MPI_Put(&send_buffer[i*nbytes], nbytes, MPI_BYTE, send_to, 0, nbytes, MPI_BYTE, wins[i]);
 	}
-	MPI_Win_fence(0, &wins[i]);
+	MPI_Win_fence(0, wins[i]);
     }
     gettimeofday(&t2, NULL);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    double latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
-    double max_latency = 0;
+    latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
+    max_latency = 0;
     MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
     if(node.world_rank == 0) {
