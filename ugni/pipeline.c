@@ -291,7 +291,7 @@ int main(int argc, char **argv)
 
 	if(isDest) {
 	    if(memcmp(send_buffer, receive_buffer, nbytes*iters) != 0)
-		printf("Invalid received data!\n");
+		printf("Error: Invalid received data!\n");
 	    rc = posix_memalign((void **) &receive_buffer, 64,
 		    (nbytes * iters));
 	    assert(rc == 0);
