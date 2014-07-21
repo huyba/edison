@@ -383,6 +383,9 @@ int main(int argc, char **argv)
 
     MPI_Barrier(MPI_COMM_WORLD);
 
+    if(node.world_rank == 0)
+        printf("\nDirect transfer using MPI_Isend/MPI_Irecv\n");
+
     /*Adding MPI_Isend/Irecv to see the performance*/
     char *recv_buf;
     rc = MPI_Alloc_mem(nbytes*iters, MPI_INFO_NULL, &recv_buf);
