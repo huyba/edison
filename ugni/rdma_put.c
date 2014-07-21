@@ -157,10 +157,10 @@ int main(int argc, char **argv)
 	/* Send the data. */
 	rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
 	rdma_data_desc[i].local_addr += i * nbytes;
-	rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr + sizeof(uint64_t);
+	rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr;// + sizeof(uint64_t);
 	rdma_data_desc[i].remote_addr += i * nbytes;
 	rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
-	rdma_data_desc[i].length = nbytes - sizeof(uint64_t);
+	rdma_data_desc[i].length = nbytes;// - sizeof(uint64_t);
 	status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
 	if (status != GNI_RC_SUCCESS) {
 	    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
@@ -180,8 +180,8 @@ int main(int argc, char **argv)
 	printf("Rank %d received invalid data\n", node.world_rank);
 
 	if(node.world_rank == 0) {
-	    char *char_buf = (char*)send_buffer;
-	    for(i = 0; i < 20; i ++)
+	    char *char_buf = (char*)receive_buffer;
+	    for(i = 0; i < nbytes*iters; i ++)
 		printf("%d ", char_buf[i]);
 	    printf("\n");
 	}
