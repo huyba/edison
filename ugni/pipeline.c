@@ -272,6 +272,10 @@ int main(int argc, char **argv)
 	}
 
 	if(isDest) {
+	    char *char_buf = (char*)send_buffer;
+	    for(i = 0; i < 20; i++)
+		printf("%d ", char_buf[i]);
+	    printf("\n");
 	    if(memcmp(send_buffer, receive_buffer, nbytes*iters) != 0)
 		printf("Error:  Invalid received data!\n");
 	    memset(receive_buffer, 0, nbytes*iters);
@@ -350,6 +354,8 @@ int main(int argc, char **argv)
 
     if(isSource)
 	memset(win_buf, 7, nbytes*iters);
+    else
+	memset(win_buf, 0, nbytes*iters);
 
     MPI_Win win;
     MPI_Win_create((void *)win_buf, nbytes*iters, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
