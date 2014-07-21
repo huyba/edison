@@ -378,12 +378,57 @@ int main(int argc, char **argv)
     if(node.isDest) {
 	if(memcmp(win_buf, send_buffer, nbytes*iters) != 0)
 	    printf("Error: Invalid received data. MPI_Put\n");
-	memset(win_buf, 0, nbytes*iters);
+	memset(win_buf, 7, nbytes*iters);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    /*Adding MPI_Isend/Recv to see the performance*/
+    /*Adding MPI_Isend/Irecv to see the performance*/
+    char *recv_buf;
+    rc = MPI_Alloc_mem(nbytes*iters, MPI_INFO_NULL, &recv_buf);
+    if(rc) {
+        printf("Error: Could not allocate memory. Error code %d\n", rc);
+    }
+    memset(recv_buf, 7, iters*nbytes);
+
+    MPI_Request *request = (MPI_Request*)malloc(sizeof(MPI_Request)*iters);
+    MPI_Status *mpi_status = (MPI_Status *)malloc(sizeof(MPI_Status)*iters);
+
+    gettimeofday(&t1, NULL);
+
+    if(node.isSource) {
+	for(i = 0; i < iters; i++) {
+	    MPI_Isend(&win_buf[i*nbytes], nbytes, MPI_BYTE, send_to, 0, MPI_COMM_WORLD, &request[i]);
+	}
+	MPI_Waitall(iters, request, mpi_status);
+    }
+    if(node.isDest) {
+	for(i = 0; i < iters; i++) {
+	    MPI_Irecv(&recv_buf[i*nbytes], nbytes, MPI_BYTE, receive_from, 0, MPI_COMM_WORLD, &request[i]);
+	}
+	MPI_Waitall(iters, request, mpi_status);
+    }
+
+    gettimeofday(&t2, NULL);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
+    max_latency = 0;
+    MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    if(node.world_rank == 0) {
+        double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
+        printf("%d \t %8.6f \t %8.4f\n\n", nbytes, bandwidth, max_latency);
+    }
+
+    if(node.isDest) {
+        if(memcmp(win_buf, recv_buf, nbytes*iters) != 0)
+            printf("Error: Invalid received data. MPI_Put\n");
+        memset(win_buf, 0, nbytes*iters);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     node.uGNI_finalize();
 
@@ -391,6 +436,9 @@ int main(int argc, char **argv)
     free(send_buffer);
     free(rdma_data_desc);
     MPI_Free_mem(win_buf);
+    MPI_Free_mem(recv_buf);
+    free(request);
+    free(mpi_status);
 
     PMI_Finalize();
 
