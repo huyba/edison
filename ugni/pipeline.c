@@ -87,12 +87,9 @@ int main(int argc, char **argv)
     rc = posix_memalign((void **) &send_buffer, 64,
 	    (nbytes * iters));
     assert(rc == 0);
-    char *char_send = (char*)send_buffer;
-    for(int i = 0; i < nbytes*iters; i++)
-	char_send[i] = 7;
 
     /*Initialize the buffer to all zeros.*/
-    //memset(send_buffer, 0, (nbytes * iters));
+    memset(send_buffer, 7, (nbytes * iters));
 
     rc = posix_memalign((void **) &receive_buffer, 64,
 	    (nbytes * iters));
@@ -363,9 +360,15 @@ int main(int argc, char **argv)
 	printf("\nDirect transfer using MPI_Put\n");
 
 
-    char *win_buf = (char*)send_buffer;
+    char *win_buf;
+    MPI_Alloc_mem(nbytes*iters, MPI_INFO_NULL, (void *)win_buf);
+    assert(win_buf == NULL);
+
+    if(isSource)
+	memset(win_buf, 7, nbytes*iters);
+
     MPI_Win win;
-    MPI_Win_create(win_buf, nbytes*iters, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+    MPI_Win_create((void *)win_buf, nbytes*iters, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
 
     /*Direct transfer using MPI_Put*/
     MPI_Barrier(MPI_COMM_WORLD);
@@ -396,7 +399,7 @@ int main(int argc, char **argv)
     }
 
     if(isDest) {
-	if(memcmp(send_buffer, receive_buffer, nbytes*iters) != 0)
+	if(memcmp(win_buf, send_buffer, nbytes*iters) != 0)
 	    printf("Error: Invalid received data. MPI_Put\n");
 	rc = posix_memalign((void **) &receive_buffer, 64,
 		(nbytes * iters));
@@ -412,6 +415,7 @@ int main(int argc, char **argv)
     free(receive_buffer);
     free(send_buffer);
     free(rdma_data_desc);
+    MPI_Free_mem(win_buf);
 
     PMI_Finalize();
 
