@@ -143,21 +143,6 @@ int main(int argc, char **argv)
     else
 	printf("Rank %d [x, y, z, nid] = [%d, %d, %d, %d]\n", node.world_rank, node.coord.mesh_x, node.coord.mesh_y, node.coord.mesh_z, node.nid);
 
-    for(i = 0; i < iters; i++) {
-	/*
-	 * Initialize the data to be sent.
-	 * The source data will look like: 0xddddlllllltttttt
-	 *     where: dddd is the actual value
-	 *            llllll is the rank for this process
-	 *            tttttt is the transfer number
-	 */
-	data = SEND_DATA + i + 1;
-
-	for (j = 0; j < transfer_length; j++) {
-	    send_buffer[j + (i * transfer_length)] = data;
-	}
-    }
-
     if(node.world_rank == 0) {
 	printf("\nmin_wsize = %d, max_wsize = %d, message_size = %d, iters = %d\n", min_wsize, max_wsize, nbytes, iters);
 	printf("\nSize  \t\t Bandwidth  \t Latency \t #transfers \t #total_iters\n");
@@ -289,9 +274,7 @@ int main(int argc, char **argv)
 	if(isDest) {
 	    if(memcmp(send_buffer, receive_buffer, nbytes*iters) != 0)
 		printf("Error:  Invalid received data!\n");
-	    rc = posix_memalign((void **) &receive_buffer, 64,
-		    (nbytes * iters));
-	    assert(rc == 0);
+	    memset(receive_buffer, 0, nbytes*iters);
 	}
 
 	MPI_Barrier(MPI_COMM_WORLD);
@@ -349,8 +332,7 @@ int main(int argc, char **argv)
     if(isDest) {
 	if(memcmp(send_buffer, receive_buffer, nbytes*iters) != 0)
 	    printf("Error: Invalid received data - Post_Rdma no proxies\n");
-	rc = posix_memalign((void **) &receive_buffer, 64,
-		(nbytes * iters));
+	memset(receive_buffer, 0, nbytes*iters);
 	assert(rc == 0);
     }
 
@@ -361,8 +343,10 @@ int main(int argc, char **argv)
 
 
     char *win_buf;
-    MPI_Alloc_mem(nbytes*iters, MPI_INFO_NULL, (void *)win_buf);
-    assert(win_buf == NULL);
+    rc = MPI_Alloc_mem(nbytes*iters, MPI_INFO_NULL, &win_buf);
+    if(rc) {
+	printf("Error: Could not allocate memory. Error code %d\n", rc);
+    }
 
     if(isSource)
 	memset(win_buf, 7, nbytes*iters);
@@ -401,9 +385,7 @@ int main(int argc, char **argv)
     if(isDest) {
 	if(memcmp(win_buf, send_buffer, nbytes*iters) != 0)
 	    printf("Error: Invalid received data. MPI_Put\n");
-	rc = posix_memalign((void **) &receive_buffer, 64,
-		(nbytes * iters));
-	assert(rc == 0);
+	memset(win_buf, 0, nbytes*iters);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
