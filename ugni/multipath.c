@@ -111,7 +111,11 @@ int main(int argc, char **argv)
 
     int source = 0;
     int dest = node.world_size -1;
-    int proxy = node.world_size/2;
+    int num_proxies = 2;
+    int *proxies = (int*)malloc(sizeof(int)*num_proxies);
+    proxies[1] = dest;
+    proxies[0] = node.world_size/2;
+    int proxy = proxies[1];
 
     if(node.world_rank == source){
 	send_to = proxy;
@@ -201,31 +205,36 @@ int main(int argc, char **argv)
 	gettimeofday(&t1, NULL);
 
 	if(node.isSource) {
-	    for (i = 0; i < num_loops; i++) {
-		/* Send the data. */
-		rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
-		rdma_data_desc[i].local_addr += i * win_size;
-		rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr;// + sizeof(uint64_t);
-		rdma_data_desc[i].remote_addr += i * win_size;
-		rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
-		rdma_data_desc[i].length = win_size;// - sizeof(uint64_t);
-		status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
-		if (status != GNI_RC_SUCCESS) {
-		    fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
-		    postRdmaStatus(status);
-		    continue;
+	    /*Transfer to the 1st proxy*/
+	    for(j = 0; j < num_proxies; j++)
+	    {
+		send_to = proxies[j];
+		for (i = num_loops*j/num_proxies; i < num_loops*(j+1)/num_proxies; i++) {
+		    /* Send the data. */
+                    rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
+	            rdma_data_desc[i].local_addr += i * win_size;
+	            rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[send_to].addr;// + sizeof(uint64_t);
+		    rdma_data_desc[i].remote_addr += i * win_size;
+		    rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[send_to].mdh;
+                    rdma_data_desc[i].length = win_size;// - sizeof(uint64_t);
+	            status = GNI_PostRdma(node.endpoint_handles_array[send_to], &rdma_data_desc[i]);
+	            if (status != GNI_RC_SUCCESS) {
+		        fprintf(stdout, "[%s] Rank: %4i GNI_PostRdma data ERROR status: %d\n", uts_info.nodename, node.world_rank, status);
+			postRdmaStatus(status);
+			continue;
+		    }
 		}
-		//printf("Rank 0 posted a message\n");
-	    }   /* end of for loop for transfers */
+	    }
 
 	    //Check to make sure that all sends are done.
-	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
-	    //printf("Rank 0 done all\n");
+	    for(j = 0; j < num_proxies; j++) {
+		node.uGNI_waitAllSendDone(proxies[j], node.cq_handle, num_loops/num_proxies);
+	    }
 	}
 
 	/*Act as a proxy*/
 	if(node.isProxy) {
-	    for(i = 0; i < num_loops; i++) {
+	    for(i = 0; i < num_loops/num_proxies; i++) {
 		node.uGNI_waitRecvDone(receive_from, node.destination_cq_handle);
 		//printf("done waiting at proxy\n");
 		rdma_data_desc[i].local_addr = (uint64_t) send_buffer;
@@ -244,14 +253,15 @@ int main(int argc, char **argv)
 		//printf("Rank 2 posted a message\n");
 	    }
 	    //Check to make sure that all sends are done.
-	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops);
+	    node.uGNI_waitAllSendDone(send_to, node.cq_handle, num_loops/num_proxies);
 	    //printf("Rank 2 done all\n");
 	}
 
 	/*Destination to receive data*/
 	if(node.isDest) {
 	    //Check to get all data received
-	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops);
+	    node.uGNI_waitAllRecvDone(0, node.destination_cq_handle, num_loops/2);
+	    node.uGNI_waitAllRecvDone(receive_from, node.destination_cq_handle, num_loops/2);
 	    //printf("Rank 3 done waiting all\n");
 	}
 
@@ -390,7 +400,7 @@ int main(int argc, char **argv)
         printf("\nDirect transfer using MPI_Isend/MPI_Irecv\n");
 
     /*Adding MPI_Isend/Irecv to see the performance*/
-    char *recv_buf;
+    /*char *recv_buf;
     rc = MPI_Alloc_mem(nbytes*iters, MPI_INFO_NULL, &recv_buf);
     if(rc) {
         printf("Error: Could not allocate memory. Error code %d\n", rc);
@@ -435,7 +445,7 @@ int main(int argc, char **argv)
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
-
+    */
     /*for(i = 0; i < iters; i++)
     {
 	if(node.isSource)
@@ -452,9 +462,9 @@ int main(int argc, char **argv)
     free(send_buffer);
     free(rdma_data_desc);
     MPI_Free_mem(win_buf);
-    MPI_Free_mem(recv_buf);
-    free(request);
-    free(mpi_status);
+    //MPI_Free_mem(recv_buf);
+    //free(request);
+    //free(mpi_status);
 
     PMI_Finalize();
 
