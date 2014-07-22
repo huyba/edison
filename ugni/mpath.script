@@ -1,0 +1,18 @@
+#PBS -l mppwidth=24
+#PBS -l walltime=00:10:00
+#PBS -N mpath
+#PBS -q debug
+#PBS -V
+
+cd $PBS_O_WORKDIR
+
+aprun -n 8 ./mpath.x
+
+#aprun -n 8 ./mpath.x 512 32768 32768 4
+
+#aprun -n 8 -S 1 -sn 1 ./mpath.x 512 32768 32768 4
+
+#aprun -n 4 -L 2661,2786,2788,2792 -S 1 -sn 1 ./mpath.x 1024 262144 262144  2
+
+#aprun -n 4 -S 1 -sn 1 ./mpath.x 1024 262144 262144  2
+
