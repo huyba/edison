@@ -1,3 +1,7 @@
+/*
+* Multiple paths data movement
+*/
+
 #include <stdio.h>
 #include<stdlib.h>
 
@@ -5,13 +9,13 @@
 
 #include "node.h"
 
-typedef struct Proc {
+typedef struct {
     int world_rank;
     int coord_x;
     int coord_y;
     int coord_z;
     int nid;
-} Proc;
+} proc_t;
 
 int main(int argv, char **argc) {
 
@@ -21,7 +25,7 @@ int main(int argv, char **argc) {
     node.uGNI_init();    
     node.uGNI_getTopoInfo();
 
-    Proc *proc = (Proc*)malloc(sizeof(Proc));
+    proc_t *proc = (roc*)malloc(sizeof(Proc));
     proc->world_rank = node.world_rank;
     proc->nid = node.nid;
     proc->coord_x = node.coord.mesh_x;
@@ -83,7 +87,10 @@ int main(int argv, char **argc) {
 	MPI_Abort(MPI_COMM_WORLD, 911);
     }
 
-   m
+    for(int i = 0; i < num_aries; i++) {
+	
+    }
+    
 
     PMI_Finalize();
 
