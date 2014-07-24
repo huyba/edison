@@ -1,5 +1,7 @@
 /*
 * Multiple paths data movement
+* @author: Huy Bui
+* @Date: July 24th, 2014
 */
 
 #include <stdio.h>
