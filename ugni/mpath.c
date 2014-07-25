@@ -64,19 +64,20 @@ int main(int argv, char **argc) {
 		existing = true;
 		break;
 	    }
-	    if(!existing) {
-		num_aries++;
-		distinct_procs[j].world_rank = procs[i].world_rank;
-		distinct_procs[j].coord_x = procs[i].coord_x;
-		distinct_procs[j].coord_y = procs[i].coord_y;
-		distinct_procs[j].coord_z = procs[i].coord_z;
-		distinct_procs[j].nid = procs[i].nid;
-	    }
+	}
+	if(!existing) {
+	    distinct_procs[num_aries].world_rank = procs[i].world_rank;
+	    distinct_procs[num_aries].coord_x = procs[i].coord_x;
+	    distinct_procs[num_aries].coord_y = procs[i].coord_y;
+	    distinct_procs[num_aries].coord_z = procs[i].coord_z;
+	    distinct_procs[num_aries].nid = procs[i].nid;
+	    num_aries++;
 	}
     }
 
     /*Print distinct aries*/
     if(node.world_rank == 0) {
+	printf("Distinct aries coordinates\n");
 	for(int i = 0; i < num_aries; i++) {
 	    printf("Rank %d [%d %d %d %d]\n", distinct_procs[i].world_rank, distinct_procs[i].coord_x, distinct_procs[i].coord_y, distinct_procs[i].coord_z, distinct_procs[i].nid);
 	}
@@ -146,34 +147,34 @@ int main(int argv, char **argc) {
 
     if(node.isSource) {
 	for(int i = 0; i < iters/2; i++) {
-            MPI_Isend(&send_buf[i*nbytes], nbytes, MPI_BYTE, proxy1, 0, MPI_COMM_WORLD, &request[i]);
-        }
+	    MPI_Isend(&send_buf[i*nbytes], nbytes, MPI_BYTE, proxy1, 0, MPI_COMM_WORLD, &request[i]);
+	}
 	for(int i = iters/2; i < iters; i++) {
-            MPI_Isend(&send_buf[i*nbytes], nbytes, MPI_BYTE, proxy2, 0, MPI_COMM_WORLD, &request[i]);
-        }
-        MPI_Waitall(iters, request, status);
+	    MPI_Isend(&send_buf[i*nbytes], nbytes, MPI_BYTE, proxy2, 0, MPI_COMM_WORLD, &request[i]);
+	}
+	MPI_Waitall(iters, request, status);
     }
 
     if(node.world_rank == proxy1) {
 	for(int i = 0; i < iters/2; i++) {
-            MPI_Recv(&recv_buf[i*nbytes], nbytes, MPI_BYTE, sourceId, 0, MPI_COMM_WORLD, &status[i]);
+	    MPI_Recv(&recv_buf[i*nbytes], nbytes, MPI_BYTE, sourceId, 0, MPI_COMM_WORLD, &status[i]);
 	    MPI_Isend(&recv_buf[i*nbytes], nbytes, MPI_BYTE, destId, 0, MPI_COMM_WORLD, &request[i]);
-        }
+	}
 	MPI_Waitall(iters/2, request, status);
     }
     if(node.world_rank == proxy2) {
-        for(int i = iters/2; i < iters; i++) {
-            MPI_Recv(&recv_buf[i*nbytes], nbytes, MPI_BYTE, sourceId, 0, MPI_COMM_WORLD, &status[i]);
+	for(int i = iters/2; i < iters; i++) {
+	    MPI_Recv(&recv_buf[i*nbytes], nbytes, MPI_BYTE, sourceId, 0, MPI_COMM_WORLD, &status[i]);
 	    MPI_Isend(&recv_buf[i*nbytes], nbytes, MPI_BYTE, destId, 0, MPI_COMM_WORLD, &request[i]);
 	}
-        MPI_Waitall(iters/2, &request[iters/2], status);
+	MPI_Waitall(iters/2, &request[iters/2], status);
     }
-    
+
     if(node.isDest) {
 	for(int i = 0; i < iters/2; i++) {            
 	    MPI_Irecv(&recv_buf[i*nbytes], nbytes, MPI_BYTE, proxy1, 0, MPI_COMM_WORLD, &request[i]);
-            MPI_Irecv(&recv_buf[(i+iters/2)*nbytes], nbytes, MPI_BYTE, proxy2, 0, MPI_COMM_WORLD, &request[i+iters/2]);
-        }
+	    MPI_Irecv(&recv_buf[(i+iters/2)*nbytes], nbytes, MPI_BYTE, proxy2, 0, MPI_COMM_WORLD, &request[i+iters/2]);
+	}
 	MPI_Waitall(iters, request, status);
     }
 
@@ -184,8 +185,8 @@ int main(int argv, char **argc) {
     MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
     if(node.world_rank == 0) {
-        double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
-        printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
+	double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
+	printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
     }
 
     PMI_Finalize();
