@@ -115,7 +115,12 @@ int main(int argv, char **argc) {
     MPI_Request *request = (MPI_Request*)malloc(sizeof(MPI_Request)*iters);
     MPI_Status *status = (MPI_Status*)malloc(sizeof(MPI_Status)*iters);
 
+    memset(send_buf, 7, iters*nbytes);
+    memset(recv_buf, 0, iters*nbytes);
+
     struct timeval t1, t2;
+
+    MPI_Barrier(MPI_COMM_WORLD);
     gettimeofday(&t1, NULL);
 
     if(node.isSource) {
@@ -139,9 +144,17 @@ int main(int argv, char **argc) {
     MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
     if(node.world_rank == 0) {
+	printf("Direct using MPI_Isend/Irecv\n");
 	double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
 	printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
     }
+
+    if(node.isDest) {
+	if(memcmp(send_buf, recv_buf, iters*nbytes) != 0)
+	    printf("Invalid received data\n");
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
 
     gettimeofday(&t1, NULL);
 
@@ -185,8 +198,131 @@ int main(int argv, char **argc) {
     MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
 
     if(node.world_rank == 0) {
+	printf("Proxy using MPI_Isend/Irecv\n");
 	double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
 	printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
+    }
+
+    if(node.isDest) {
+	if(memcmp(send_buf, recv_buf, iters*nbytes) != 0)
+	    printf("Invalid received data\n");
+    }
+
+    if(node.isSource)
+	memset(send_buf, 7, iters*nbytes);
+    else
+	memset(send_buf, 0, iters*nbytes);
+
+    memset(recv_buf, 7, iters*nbytes);
+
+    MPI_Win win;
+    MPI_Win_create(send_buf, iters*nbytes, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    gettimeofday(&t1, NULL);
+   
+    MPI_Win_fence(0, win);
+
+    if(node.isSource) {
+	for(int i = 0; i < iters; i++) {
+	    MPI_Put(send_buf+i*nbytes, nbytes, MPI_BYTE, destId, nbytes*i, nbytes, MPI_BYTE, win);
+	}
+    }
+
+    MPI_Win_fence(0, win);
+
+    gettimeofday(&t2, NULL);
+
+    latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
+    max_latency = 0;
+    MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    if(node.world_rank == 0) {
+	printf("Proxy using MPI_Put\n");
+	double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
+	printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
+    }
+
+    if(node.isDest) {
+	if(memcmp(send_buf, recv_buf, iters*nbytes) != 0)
+	    printf("Invalid received data\n");
+    }
+
+    gni_return_t   gni_status = GNI_RC_SUCCESS;
+    int create_destination_cq = 1;
+    int number_of_cq_entries  = iters;
+    int number_of_dest_cq_entries = 1;
+    gni_post_descriptor_t *rdma_data_desc;
+
+    node.uGNI_createBasicCQ(number_of_cq_entries, number_of_dest_cq_entries);
+    node.uGNI_createAndBindEndpoints();
+
+    node.uGNI_regAndExchangeMem(send_buf, nbytes * iters, recv_buf, nbytes * iters);
+
+    /* Allocate the rdma_data_desc array. */
+    rdma_data_desc = (gni_post_descriptor_t *) calloc(iters, sizeof(gni_post_descriptor_t));
+    assert(rdma_data_desc != NULL); 
+
+    for (int i = 0; i < iters; i++) {
+	rdma_data_desc[i].type = GNI_POST_RDMA_PUT;
+	if (create_destination_cq != 0) {
+	    rdma_data_desc[i].cq_mode = GNI_CQMODE_GLOBAL_EVENT | GNI_CQMODE_REMOTE_EVENT;
+	} else {
+	    rdma_data_desc[i].cq_mode = GNI_CQMODE_GLOBAL_EVENT;
+	}
+	rdma_data_desc[i].dlvr_mode = GNI_DLVMODE_PERFORMANCE;
+	rdma_data_desc[i].local_addr = (uint64_t) send_buf;
+	rdma_data_desc[i].local_mem_hndl = node.send_mem_handle;
+	rdma_data_desc[i].rdma_mode = GNI_RDMAMODE_FENCE;
+	rdma_data_desc[i].src_cq_hndl = node.cq_handle;
+    }
+
+    if(node.isSource)
+	memset(send_buf, 7, iters*nbytes);
+    else
+	memset(send_buf, 0, iters*nbytes);
+    memset(recv_buf, 0, iters*nbytes);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    gettimeofday(&t1, NULL);
+
+    if(node.isSource) {
+	for(int i = 0; i < iters; i++) {
+	    /* Send the data. */
+	    rdma_data_desc[i].local_addr = (uint64_t) send_buf;
+	    rdma_data_desc[i].local_addr += i * nbytes;
+	    rdma_data_desc[i].remote_addr = node.remote_memory_handle_array[destId].addr;
+	    rdma_data_desc[i].remote_addr += i * nbytes;
+	    rdma_data_desc[i].remote_mem_hndl = node.remote_memory_handle_array[destId].mdh;
+	    rdma_data_desc[i].length = nbytes;
+	    gni_status = GNI_PostRdma(node.endpoint_handles_array[destId], &rdma_data_desc[i]);
+	    if (gni_status != GNI_RC_SUCCESS) {
+		fprintf(stdout, "Rank: %4i GNI_PostRdma data ERROR status: %d\n", node.world_rank, gni_status);
+		postRdmaStatus(gni_status);
+		continue;
+	    }
+	}
+	node.uGNI_waitAllSendDone(destId, node.cq_handle, iters);
+    }
+    if(node.isDest) {
+	node.uGNI_waitAllRecvDone(sourceId, node.destination_cq_handle, iters);
+    }
+
+    gettimeofday(&t2, NULL);
+
+    latency = ((t2.tv_sec * 1000000 + t2.tv_usec) - (t1.tv_sec * 1000000 + t1.tv_usec))*1.0/iters;
+    max_latency = 0;
+    MPI_Reduce(&latency, &max_latency, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    if(node.world_rank == 0) {
+	printf("Direct using uGNI_PostRdma\n");
+	double bandwidth = nbytes*1000000.0/(max_latency*1024*1024);
+	printf("%d \t %8.6f \t %8.4f\n", nbytes, bandwidth, max_latency);
+    }
+
+    if(node.isDest) {
+	if(memcmp(send_buf, recv_buf, iters*nbytes) != 0)
+	    printf("Invalid received data\n");
     }
 
     PMI_Finalize();
